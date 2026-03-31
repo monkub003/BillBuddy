@@ -1,0 +1,31 @@
+version: "3.8"
+
+services:
+  firebase-emulators:
+    image: node:18-slim
+    working_dir: /app
+    volumes:
+      - .:/app
+      - firebase-cache:/root/.cache/firebase
+    ports:
+      - "4000:4000"   # Emulator Suite UI
+      - "8080:8080"   # Cloud Functions
+      - "8081:8081"   # Firestore
+      - "9199:9199"   # Firebase Storage
+    environment:
+      - FIREBASE_PROJECT_ID=billbuddy-dev
+      - GCLOUD_PROJECT=billbuddy-dev
+    command: >
+      bash -c "
+        npm install -g firebase-tools &&
+        cd functions && npm install && cd .. &&
+        firebase emulators:start --project billbuddy-dev
+      "
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  firebase-cache:
