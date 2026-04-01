@@ -1,678 +1,853 @@
-# Design Document: BillBuddy MVP
+# Design Document - BillSense
 
 ## Overview
 
-BillBuddy MVP is an AI-powered mobile expense tracking application built with React Native (TypeScript) on the frontend and Firebase (Firestore, Cloud Functions) on the backend. The system enables users to track domestic expenses through three input channels: manual entry, camera-based OCR extraction, and email receipt parsing. It provides a visual dashboard for financial status, predictive analysis using external data sources, and income/expense compatibility alerts.
+BillSense เป็น Mobile Application ที่ใช้ AI/ML ช่วยจัดการค่าใช้จ่ายครัวเรือน ระบบประกอบด้วย Mobile App (Frontend), Cloud Backend (API + Business Logic), AI/ML Services (Data Extraction, Categorization, Trend Analysis) และ Cloud Database
 
-The architecture follows an event-driven pattern where AI extraction Cloud Functions are triggered by image uploads or email webhooks. All data flows through a JWT-authenticated API layer that enforces strict user-scoped data isolation. The frontend uses Expo Router for navigation, Zustand for state management, and NativeWind for styling.
+แนวคิดหลักคือ ผู้ใช้ส่งบิลเข้าระบบ (Forward อีเมลหรือถ่ายรูป) → AI สกัดข้อมูล → จัดหมวดหมู่อัตโนมัติ → วิเคราะห์แนวโน้ม → แจ้งเตือนและวางแผนการเงิน
 
-### Key Design Decisions
+### Design Decisions
 
-1. **Custom JWT + bcrypt auth over Firebase Auth**: Provides full control over token payload (embedding user_id) and password hashing, aligning with the requirement for custom auth logic.
-2. **Firestore over Realtime Database**: Better suited for structured queries (filtering expenses by category, date ranges, user_id) and offline support.
-3. **Cloud Functions for AI processing**: Keeps AI extraction logic serverless and event-driven, scaling independently from the main API.
-4. **Zustand over Context API**: Simpler API for global state with less boilerplate and better performance for frequent dashboard updates.
-5. **Standardized API response envelope**: `{ data, error }` pattern simplifies frontend error handling and provides a consistent contract.
+1. **Event-Driven Architecture**: ใช้ event-driven pattern สำหรับ data pipeline เพื่อให้แต่ละ module ทำงานแยกกันได้ (loose coupling) เช่น เมื่อ Data_Extractor สกัดข้อมูลเสร็จ จะ emit event ให้ Expense_Categorizer ทำงานต่อ
+2. **ML Model Serving**: ใช้ managed ML service (เช่น AWS SageMaker หรือ Google Cloud AI) สำหรับ OCR และ NLP แทนการ host model เอง เพื่อลด operational overhead
+3. **Offline-First Mobile**: Mobile App ใช้ local database (SQLite/Realm) เป็น cache เพื่อให้ใช้งานได้แม้ไม่มี internet แล้ว sync กับ Cloud เมื่อ online
+4. **Structured Data Format**: ใช้ JSON เป็น canonical format สำหรับ Expense_Record เพื่อรองรับ round-trip property ระหว่าง parse/display
 
 ## Architecture
 
-### High-Level Architecture
+### System Architecture Diagram
 
 ```mermaid
 graph TB
-    subgraph Frontend ["React Native App (Expo)"]
-        AUTH_SCREENS["Auth Screens<br/>(Login/Signup)"]
-        DASHBOARD["Dashboard<br/>(Charts, Summary)"]
-        CAMERA["Camera Screen<br/>(Image Capture)"]
-        MANUAL_FORM["Manual Entry Form"]
-        SETTINGS["Settings<br/>(Income Input)"]
+    subgraph "Mobile App (Frontend)"
+        UI[Dashboard UI]
+        Camera[Camera Module]
+        EmailForward[Email Forward Handler]
+        LocalDB[Local Database - SQLite]
+        NotifClient[Notification Client]
     end
 
-    subgraph Backend ["Firebase Backend"]
-        API["API Layer<br/>(Cloud Functions - Express)"]
-        AUTH_SVC["Auth Service<br/>(JWT + bcrypt)"]
-        EXPENSE_SVC["Expense Service"]
-        PREDICTION_ENG["Prediction Engine"]
-        FIRESTORE["Firestore DB"]
-        STORAGE["Firebase Storage"]
+    subgraph "Cloud Backend"
+        API[API Gateway]
+        AuthService[Auth Service]
+        BillProcessor[Bill Processing Service]
+        CategoryService[Categorization Service]
+        TrendService[Trend Analysis Service]
+        FinancialService[Financial Planning Service]
+        NotifService[Notification Service]
+        Scheduler[Job Scheduler]
     end
 
-    subgraph AI_Services ["AI Cloud Functions"]
-        OCR["OCR Extractor"]
-        EMAIL_EXT["Email Extractor"]
-        PARSER["Extraction Data Mapper"]
+    subgraph "AI/ML Services"
+        OCR[OCR Engine - Image to Text]
+        NLP[NLP Parser - Email/Text Extraction]
+        MLModel[ML Trend Prediction Model]
     end
 
-    subgraph External ["External APIs"]
-        WEATHER["Weather API"]
-        ECON["Economic Indicators API"]
-        EXCHANGE["Exchange Rate API"]
+    subgraph "External Services"
+        WeatherAPI[Weather API]
+        PushNotif[Push Notification Service - FCM/APNs]
+        EmailInbound[Inbound Email Service]
     end
 
-    AUTH_SCREENS -->|signup/login| API
-    DASHBOARD -->|fetch expenses, predictions| API
-    CAMERA -->|upload image| STORAGE
-    MANUAL_FORM -->|create expense| API
-    SETTINGS -->|set income| API
+    subgraph "Data Layer"
+        CloudDB[(Cloud Database - PostgreSQL)]
+        ObjectStore[Object Storage - S3/GCS]
+        Cache[Redis Cache]
+    end
 
-    API --> AUTH_SVC
-    API --> EXPENSE_SVC
-    API --> PREDICTION_ENG
+    UI --> API
+    Camera --> BillProcessor
+    EmailForward --> EmailInbound
+    EmailInbound --> BillProcessor
+    LocalDB <--> API
 
-    AUTH_SVC --> FIRESTORE
-    EXPENSE_SVC --> FIRESTORE
+    API --> AuthService
+    BillProcessor --> OCR
+    BillProcessor --> NLP
+    BillProcessor --> CategoryService
+    CategoryService --> CloudDB
+    TrendService --> MLModel
+    TrendService --> WeatherAPI
+    FinancialService --> TrendService
+    NotifService --> PushNotif
+    Scheduler --> TrendService
+    Scheduler --> NotifService
 
-    STORAGE -->|trigger on upload| OCR
-    OCR --> PARSER
-    EMAIL_EXT --> PARSER
-    PARSER --> EXPENSE_SVC
-
-    PREDICTION_ENG --> WEATHER
-    PREDICTION_ENG --> ECON
-    PREDICTION_ENG --> EXCHANGE
-    PREDICTION_ENG --> FIRESTORE
+    BillProcessor --> CloudDB
+    BillProcessor --> ObjectStore
+    TrendService --> CloudDB
+    FinancialService --> CloudDB
+    NotifService --> CloudDB
+    API --> Cache
 ```
 
-### Request Flow
+### Data Flow
 
 ```mermaid
 sequenceDiagram
-    participant App as React Native App
-    participant API as API Layer
-    participant Auth as Auth Service
-    participant DB as Firestore
-    participant Storage as Firebase Storage
-    participant OCR as OCR Extractor
-    participant Parser as Data Mapper
+    participant User
+    participant App as Mobile App
+    participant API as API Gateway
+    participant BP as Bill Processor
+    participant AI as AI/ML Services
+    participant Cat as Categorizer
+    participant DB as Cloud Database
+    participant Notif as Notification Service
 
-    Note over App,API: Authenticated Request Flow
-    App->>API: Request + JWT Token
-    API->>Auth: Verify JWT
-    Auth-->>API: user_id
-    API->>DB: Query scoped to user_id
-    DB-->>API: Results
-    API-->>App: { data: ..., error: null }
-
-    Note over App,Parser: Image Extraction Flow
-    App->>Storage: Upload image (authenticated)
-    Storage->>OCR: Trigger Cloud Function
-    OCR->>Parser: Raw extraction + confidence scores
-    Parser->>DB: Create Expense_Record (extracted_via: "image")
-    Parser-->>App: Extraction result + confidence flags
+    User->>App: Forward email / ถ่ายรูปบิล
+    App->>API: Upload bill document
+    API->>BP: Process bill
+    BP->>AI: Extract data (OCR/NLP)
+    AI-->>BP: Extracted fields
+    BP-->>App: แสดงข้อมูลให้ยืนยัน
+    User->>App: ยืนยันข้อมูล
+    App->>API: Confirm expense record
+    API->>Cat: Categorize expense
+    Cat-->>DB: Save categorized record
+    DB-->>App: Sync to local DB
+    Notif-->>User: แจ้งเตือนตามกำหนด
 ```
+
 
 ## Components and Interfaces
 
-### Backend Components
+### 1. Data Extractor Module
 
-#### Auth Service (`functions/src/services/authService.ts`)
-Handles user registration, login, and JWT token management.
-
-```typescript
-interface AuthService {
-  signup(email: string, password: string): Promise<ApiResponse<{ token: string; user: User }>>;
-  login(email: string, password: string): Promise<ApiResponse<{ token: string; user: User }>>;
-  verifyToken(token: string): Promise<{ userId: string }>;
-}
-```
-
-#### Expense Service (`functions/src/services/expenseService.ts`)
-CRUD operations for expense records, always scoped to the authenticated user.
+รับผิดชอบการสกัดข้อมูลจาก Bill_Document (อีเมลและรูปถ่าย) แปลงเป็น structured data
 
 ```typescript
-interface ExpenseService {
-  createExpense(userId: string, data: CreateExpenseInput): Promise<ApiResponse<Expense>>;
-  getExpenses(userId: string, filters?: ExpenseFilters): Promise<ApiResponse<Expense[]>>;
-  updateExpense(userId: string, expenseId: string, data: Partial<Expense>): Promise<ApiResponse<Expense>>;
-  deleteExpense(userId: string, expenseId: string): Promise<ApiResponse<void>>;
+interface DataExtractor {
+  // สกัดข้อมูลจากอีเมลบิล
+  extractFromEmail(emailContent: string): Promise<ExtractionResult>;
+  
+  // สกัดข้อมูลจากรูปถ่าย (base64 หรือ URL)
+  extractFromImage(imageData: string): Promise<ExtractionResult>;
+  
+  // ตรวจสอบคุณภาพรูปถ่าย
+  validateImageQuality(imageData: string): Promise<QualityCheckResult>;
 }
 
-interface CreateExpenseInput {
-  category: ExpenseCategory;
-  amount: number;
-  dueDate: string;
-  isPaid: boolean;
-  extractedVia: 'email' | 'image' | 'manual';
-  rawSourceRef?: string;
-}
-
-interface ExpenseFilters {
-  category?: ExpenseCategory;
-  month?: number;
-  year?: number;
-  isPaid?: boolean;
-}
-```
-
-#### OCR Extractor (`functions/src/extractors/ocrExtractor.ts`)
-Cloud Function triggered by Firebase Storage uploads. Processes bill/receipt images.
-
-```typescript
 interface ExtractionResult {
-  amount: { value: number; confidence: number };
-  category: { value: ExpenseCategory; confidence: number };
-  dueDate: { value: string; confidence: number };
+  success: boolean;
+  confidence: number; // 0.0 - 1.0
+  data: ExtractedBillData | null;
+  errors: ExtractionError[];
 }
 
-interface OCRExtractor {
-  processImage(storageUrl: string): Promise<ExtractionResult>;
-}
-```
-
-#### Email Extractor (`functions/src/extractors/emailExtractor.ts`)
-Cloud Function triggered by email webhook. Parses email body and attachments.
-
-```typescript
-interface EmailExtractor {
-  processEmail(emailPayload: EmailWebhookPayload): Promise<ExtractionResult>;
+interface ExtractedBillData {
+  provider: string;        // ชื่อผู้ให้บริการ
+  amount: number;          // จำนวนเงินรวม
+  currency: string;        // สกุลเงิน (THB)
+  dueDate: string | null;  // วันครบกำหนดชำระ (ISO 8601)
+  lineItems: LineItem[];   // รายการย่อย (สำหรับสลิปซื้อของ)
+  billDate: string;        // วันที่ในบิล
+  rawText: string;         // ข้อความดิบที่สกัดได้
 }
 
-interface EmailWebhookPayload {
-  from: string;
-  subject: string;
-  body: string;
-  attachments?: Array<{ filename: string; content: string; mimeType: string }>;
-}
-```
-
-#### Extraction Data Mapper (`functions/src/extractors/dataMapper.ts`)
-Validates and maps raw AI extraction output to the Expense interface.
-
-```typescript
-interface DataMapper {
-  mapToExpense(raw: ExtractionResult, userId: string, source: 'email' | 'image', sourceRef: string): Expense;
-  validateExpenseData(data: Partial<Expense>): ValidationResult;
-  serializeExpense(expense: Expense): string;
-  deserializeExpense(json: string): Expense;
+interface LineItem {
+  description: string;
+  amount: number;
+  quantity: number;
 }
 
-interface ValidationResult {
-  valid: boolean;
-  errors: string[];
-  needsReview: boolean;
+interface QualityCheckResult {
+  acceptable: boolean;
+  issues: string[];        // เช่น "blurry", "too_dark", "rotated"
+  suggestions: string[];   // คำแนะนำการถ่ายรูปใหม่
 }
 ```
 
-#### Prediction Engine (`functions/src/services/predictionEngine.ts`)
-Analyzes historical data with external factors to forecast expenses.
+### 2. Expense Categorizer Module
+
+จัดหมวดหมู่ค่าใช้จ่ายอัตโนมัติ พร้อมเรียนรู้จากการแก้ไขของผู้ใช้
 
 ```typescript
+interface ExpenseCategorizer {
+  // จัดหมวดหมู่ค่าใช้จ่าย
+  categorize(record: ExpenseRecord): Promise<CategorizationResult>;
+  
+  // บันทึก feedback จากผู้ใช้เพื่อ improve model
+  recordUserCorrection(recordId: string, correctCategory: string): Promise<void>;
+  
+  // ดึงรายการหมวดหมู่ทั้งหมด (default + custom)
+  getCategories(userId: string): Promise<Category[]>;
+  
+  // สร้างหมวดหมู่ใหม่
+  createCustomCategory(userId: string, category: CategoryInput): Promise<Category>;
+}
+
+interface CategorizationResult {
+  categoryId: string;
+  categoryName: string;
+  confidence: number;      // 0.0 - 1.0
+  needsUserConfirmation: boolean; // true ถ้า confidence < 0.7
+  alternativeCategories: Array<{ categoryId: string; confidence: number }>;
+}
+
+interface Category {
+  id: string;
+  name: string;
+  icon: string;
+  isDefault: boolean;
+  parentCategory: string | null; // สำหรับ sub-category
+}
+```
+
+### 3. Trend Analyzer Module
+
+วิเคราะห์แนวโน้มค่าใช้จ่ายโดยใช้ ML model ร่วมกับข้อมูลสภาพอากาศ
+
+```typescript
+interface TrendAnalyzer {
+  // วิเคราะห์แนวโน้มรายหมวดหมู่
+  analyzeTrend(userId: string, categoryId: string, months: number): Promise<TrendResult>;
+  
+  // คาดการณ์ค่าใช้จ่ายเดือนถัดไป
+  predictNextMonth(userId: string): Promise<PredictionResult>;
+  
+  // ตรวจจับค่าใช้จ่ายที่เกิดเป็นรอบ
+  detectRecurringExpenses(userId: string): Promise<RecurringExpense[]>;
+  
+  // ดึงข้อมูลสภาพอากาศสำหรับปรับ prediction
+  getWeatherAdjustment(location: string, month: number): Promise<WeatherFactor>;
+}
+
+interface TrendResult {
+  categoryId: string;
+  direction: 'increasing' | 'decreasing' | 'stable';
+  changePercentage: number;
+  confidence: number;
+  dataPoints: Array<{ month: string; amount: number }>;
+  anomalies: Array<{ month: string; amount: number; reason: string }>;
+}
+
 interface PredictionResult {
-  category: ExpenseCategory;
-  predictedMin: number;
-  predictedMax: number;
-  factors: PredictionContext;
+  totalPredicted: number;
+  confidence: number;
+  byCategory: Array<{
+    categoryId: string;
+    predicted: number;
+    confidence: number;
+    weatherAdjusted: boolean;
+  }>;
+  warnings: PredictionWarning[];
 }
 
-interface PredictionEngine {
-  generatePredictions(userId: string): Promise<ApiResponse<PredictionResult[]>>;
-  hasEnoughData(userId: string): Promise<boolean>;
+interface RecurringExpense {
+  description: string;
+  amount: number;
+  frequency: 'monthly' | 'quarterly' | 'yearly';
+  nextDueDate: string;
+  confidence: number;
 }
 ```
 
-#### API Response Envelope (`functions/src/types/api.ts`)
+### 4. Financial Planner Module
+
+ประเมินค่าใช้จ่ายเทียบกับรายได้และวางแผนการเงิน
 
 ```typescript
-interface ApiResponse<T> {
-  data: T | null;
-  error: string | null;
+interface FinancialPlanner {
+  // คำนวณอัตราส่วนค่าใช้จ่ายต่อรายได้
+  calculateExpenseRatio(userId: string, month: string): Promise<ExpenseRatio>;
+  
+  // สร้างแผนงบประมาณรายเดือน
+  generateBudgetPlan(userId: string): Promise<BudgetPlan>;
+  
+  // คาดการณ์ค่าใช้จ่าย 3 เดือนข้างหน้า
+  forecastExpenses(userId: string, months: number): Promise<ForecastResult>;
+  
+  // คำนวณงบประมาณจากเป้าหมายการออม
+  calculateBudgetFromSavingsGoal(userId: string, savingsGoal: number): Promise<BudgetPlan>;
+  
+  // แนะนำหมวดหมู่ที่ลดค่าใช้จ่ายได้
+  suggestCostReduction(userId: string): Promise<CostReductionSuggestion[]>;
 }
 
-type ExpenseCategory = 'electricity' | 'water' | 'insurance' | 'loan' | 'gas' | 'manual';
+interface ExpenseRatio {
+  month: string;
+  totalExpense: number;
+  totalIncome: number;
+  ratio: number;           // 0.0 - 1.0+
+  isHealthy: boolean;      // true ถ้า ratio <= 0.7
+  categoryBreakdown: Array<{ categoryId: string; amount: number; percentage: number }>;
+}
+
+interface BudgetPlan {
+  month: string;
+  totalBudget: number;
+  byCategory: Array<{
+    categoryId: string;
+    budgetAmount: number;
+    basedOn: 'historical' | 'trend' | 'savings_goal';
+  }>;
+  savingsTarget: number | null;
+  lastUpdated: string;
+}
+
+interface CostReductionSuggestion {
+  categoryId: string;
+  currentAverage: number;
+  suggestedBudget: number;
+  potentialSaving: number;
+  reason: string;
+}
 ```
 
-### Frontend Components
+### 5. Notification Service
 
-#### Screens
-- `app/(auth)/login.tsx` — Login form with email/password
-- `app/(auth)/signup.tsx` — Signup form with validation
-- `app/(tabs)/index.tsx` — Dashboard (charts, summary, upcoming bills)
-- `app/(tabs)/camera.tsx` — Camera capture for bill scanning
-- `app/(tabs)/settings.tsx` — Income input, category management
+จัดการการแจ้งเตือนทุกประเภท
 
-#### Shared Components
-- `components/dashboard/ExpensePieChart.tsx` — Category distribution chart
-- `components/dashboard/MonthSummary.tsx` — Total paid/unpaid, income ratio
-- `components/dashboard/UpcomingBills.tsx` — Sorted unpaid bills list
-- `components/dashboard/PredictionCard.tsx` — Predicted expense ranges
-- `components/forms/ManualExpenseForm.tsx` — Manual expense entry form
-- `components/forms/ExtractionReview.tsx` — Review/correct low-confidence fields
-- `components/shared/AlertBanner.tsx` — Income/expense warnings
+```typescript
+interface NotificationService {
+  // แจ้งเตือนบิลที่ใกล้ครบกำหนด
+  sendBillDueReminder(userId: string, bill: RecurringExpense): Promise<void>;
+  
+  // แจ้งเตือนค่าใช้จ่ายที่คาดว่าจะเพิ่มขึ้น
+  sendExpenseWarning(userId: string, warning: PredictionWarning): Promise<void>;
+  
+  // แจ้งเตือนงบประมาณใกล้หมด
+  sendBudgetAlert(userId: string, budgetStatus: BudgetStatus): Promise<void>;
+  
+  // ดึงการตั้งค่าการแจ้งเตือนของผู้ใช้
+  getNotificationPreferences(userId: string): Promise<NotificationPreferences>;
+  
+  // อัปเดตการตั้งค่าการแจ้งเตือน
+  updateNotificationPreferences(userId: string, prefs: NotificationPreferences): Promise<void>;
+}
 
-#### Custom Hooks
-- `hooks/useAuth.ts` — Login, signup, token management
-- `hooks/useExpenses.ts` — CRUD operations, filtering
-- `hooks/useExtraction.ts` — Image upload, extraction status polling
-- `hooks/usePrediction.ts` — Fetch predictions
-- `hooks/useDashboard.ts` — Aggregated dashboard data
+interface NotificationPreferences {
+  channels: Array<'push' | 'email'>;
+  billReminder: { enabled: boolean; daysBefore: number };
+  budgetAlert: { enabled: boolean; threshold: number }; // 0.0 - 1.0
+  trendWarning: { enabled: boolean };
+  yearlyExpenseReminder: { enabled: boolean; daysBefore: number };
+}
 
-#### State Store (`store/`)
-Zustand store slices:
-- `authStore.ts` — JWT token, current user
-- `expenseStore.ts` — Expense list, filters, loading states
-- `incomeStore.ts` — Monthly income setting
-
-
-### JWT Authentication Middleware
-
-```mermaid
-flowchart LR
-    REQ["Incoming Request"] --> CHECK{"Has JWT?"}
-    CHECK -->|No| REJECT_401["401 Unauthorized"]
-    CHECK -->|Yes| VERIFY{"Valid & Not Expired?"}
-    VERIFY -->|No| REJECT_401
-    VERIFY -->|Yes| EXTRACT["Extract user_id"]
-    EXTRACT --> SCOPE["Scope DB queries to user_id"]
-    SCOPE --> HANDLER["Route Handler"]
+interface BudgetStatus {
+  month: string;
+  budgetTotal: number;
+  spentTotal: number;
+  usagePercentage: number;
+  overBudgetCategories: string[];
+}
 ```
 
-All API endpoints (except `/auth/signup` and `/auth/login`) pass through the JWT middleware. The middleware extracts `user_id` from the token payload and attaches it to the request context, ensuring every downstream database operation is scoped to the authenticated user.
+### 6. Bill Parser (Round-Trip)
+
+แปลง Expense_Record ระหว่าง structured data (JSON) และ display format โดยรับประกัน round-trip property
+
+```typescript
+interface BillParser {
+  // แปลง Expense_Record เป็น display string (Pretty Print)
+  format(record: ExpenseRecord): string;
+  
+  // แปลง display string กลับเป็น Expense_Record
+  parse(displayString: string): ExpenseRecord;
+  
+  // Serialize เป็น JSON
+  serialize(record: ExpenseRecord): string;
+  
+  // Deserialize จาก JSON
+  deserialize(json: string): ExpenseRecord;
+}
+```
+
 
 ## Data Models
 
-### Firestore Collections
-
-#### `users` Collection
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | `string` (UUID) | Primary key, auto-generated |
-| `email` | `string` | Unique, validated email address |
-| `password_hash` | `string` | bcrypt-hashed password (never plaintext) |
-| `monthly_income` | `number \| null` | User-set monthly income in THB |
-| `created_at` | `Timestamp` | Account creation timestamp |
-
-#### `expenses` Collection
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | `string` (UUID) | Primary key, auto-generated |
-| `user_id` | `string` (UUID) | Foreign key to users collection |
-| `category` | `ExpenseCategory` | One of: electricity, water, insurance, loan, gas, manual |
-| `amount` | `number` | Positive number in THB |
-| `currency` | `string` | Always "THB" for MVP |
-| `due_date` | `Timestamp` | Bill due date |
-| `is_paid` | `boolean` | Payment status |
-| `extracted_via` | `string` | One of: email, image, manual |
-| `raw_source_ref` | `string \| null` | Firebase Storage URL or email ID |
-| `needs_review` | `boolean` | True if any AI field had confidence < 0.5 |
-| `created_at` | `Timestamp` | Record creation timestamp |
-
-### Firestore Indexes
-
-- `expenses`: Composite index on `(user_id, due_date)` for upcoming bills query
-- `expenses`: Composite index on `(user_id, category, created_at)` for category filtering
-- `expenses`: Composite index on `(user_id, is_paid, due_date)` for paid/unpaid filtering
-
-### Data Validation Rules
-
-1. `email`: Must match RFC 5322 email format
-2. `password`: Minimum 8 characters (validated before hashing)
-3. `amount`: Must be a positive number (`amount > 0`)
-4. `category`: Must be one of the allowed `ExpenseCategory` values
-5. `due_date`: Must be a valid ISO 8601 date string
-6. `extracted_via`: Must be one of `'email' | 'image' | 'manual'`
-7. `currency`: Must be `'THB'` (enforced server-side for MVP)
-
-### TypeScript Type Definitions
+### Core Data Models
 
 ```typescript
-// types/expense.ts
-export type ExpenseCategory = 'electricity' | 'water' | 'insurance' | 'loan' | 'gas' | 'manual';
-export type ExtractionSource = 'email' | 'image' | 'manual';
+// ข้อมูลผู้ใช้
+interface User {
+  id: string;                    // UUID
+  email: string;
+  phone: string | null;
+  displayName: string;
+  biometricEnabled: boolean;
+  location: string | null;       // สำหรับ weather-based prediction
+  createdAt: string;             // ISO 8601
+  updatedAt: string;
+}
 
-export interface Expense {
+// ข้อมูลรายได้
+interface Income {
   id: string;
   userId: string;
-  category: ExpenseCategory;
   amount: number;
-  currency: 'THB';
-  dueDate: string;
-  isPaid: boolean;
-  extractedVia: ExtractionSource;
-  rawSourceRef?: string;
-  needsReview?: boolean;
+  source: string;                // เช่น "เงินเดือน", "freelance"
+  frequency: 'monthly' | 'one-time';
+  effectiveDate: string;
   createdAt: string;
 }
 
-// types/user.ts
-export interface User {
+// Expense Record - โมเดลหลักของระบบ
+interface ExpenseRecord {
+  id: string;                    // UUID
+  userId: string;
+  amount: number;                // จำนวนเงินรวม (> 0)
+  currency: string;              // "THB"
+  categoryId: string;
+  categoryName: string;
+  description: string;
+  provider: string | null;       // ชื่อผู้ให้บริการ
+  billDate: string;              // วันที่ในบิล (ISO 8601)
+  dueDate: string | null;        // วันครบกำหนดชำระ
+  lineItems: LineItem[];         // รายการย่อย
+  source: 'email' | 'photo' | 'manual';
+  sourceDocumentUrl: string | null; // URL ของเอกสารต้นฉบับ
+  isRecurring: boolean;
+  recurringFrequency: 'monthly' | 'quarterly' | 'yearly' | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// หมวดหมู่ค่าใช้จ่าย
+interface Category {
   id: string;
-  email: string;
+  userId: string | null;         // null = default category
+  name: string;
+  icon: string;
+  color: string;
+  isDefault: boolean;
+  parentCategoryId: string | null;
   createdAt: string;
 }
 
-// types/prediction.ts
-export interface PredictionContext {
-  weatherImpact: string;
-  economicFactor: number;
-  exchangeRate?: number;
+// Default Categories
+const DEFAULT_CATEGORIES = [
+  { name: 'สาธารณูปโภค', subcategories: ['ค่าไฟ', 'ค่าน้ำ', 'ค่าเน็ต', 'ค่าโทรศัพท์'] },
+  { name: 'ของใช้ในบ้าน', subcategories: [] },
+  { name: 'อาหาร', subcategories: ['วัตถุดิบ', 'อาหารสำเร็จรูป'] },
+  { name: 'ค่าเดินทาง', subcategories: ['น้ำมัน', 'ค่าทางด่วน', 'ขนส่งสาธารณะ'] },
+  { name: 'ประกันภัย', subcategories: ['ประกันบ้าน', 'ประกันรถ', 'ประกันสุขภาพ'] },
+  { name: 'ภาษี', subcategories: [] },
+  { name: 'อื่นๆ', subcategories: [] },
+];
+
+// งบประมาณ
+interface Budget {
+  id: string;
+  userId: string;
+  month: string;                 // "YYYY-MM"
+  totalBudget: number;
+  categoryBudgets: Array<{
+    categoryId: string;
+    amount: number;
+  }>;
+  savingsGoal: number | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
-export interface PredictionResult {
-  category: ExpenseCategory;
-  predictedMin: number;
-  predictedMax: number;
-  factors: PredictionContext;
+// การแจ้งเตือน
+interface Notification {
+  id: string;
+  userId: string;
+  type: 'bill_due' | 'budget_alert' | 'trend_warning' | 'yearly_expense' | 'expense_ratio';
+  title: string;
+  body: string;
+  data: Record<string, unknown>;
+  channel: 'push' | 'email';
+  sentAt: string;
+  readAt: string | null;
 }
 
-// types/api.ts
-export interface ApiResponse<T> {
-  data: T | null;
-  error: string | null;
+// ข้อมูล Weather Factor สำหรับ Trend Analysis
+interface WeatherFactor {
+  location: string;
+  month: number;
+  avgTemperature: number;
+  temperatureDeviation: number;  // ส่วนเบี่ยงเบนจากค่าเฉลี่ย
+  electricityMultiplier: number; // ตัวคูณปรับค่าไฟ (1.0 = ปกติ)
 }
+```
 
-export interface ExtractionFieldResult<T> {
-  value: T;
-  confidence: number;
-}
+### Database Schema (PostgreSQL)
 
-export interface ExtractionResult {
-  amount: ExtractionFieldResult<number>;
-  category: ExtractionFieldResult<ExpenseCategory>;
-  dueDate: ExtractionFieldResult<string>;
-}
+```mermaid
+erDiagram
+    users ||--o{ expenses : has
+    users ||--o{ incomes : has
+    users ||--o{ budgets : has
+    users ||--o{ notifications : has
+    users ||--o{ custom_categories : creates
+    expenses }o--|| categories : belongs_to
+    categories ||--o{ categories : has_subcategory
+
+    users {
+        uuid id PK
+        varchar email UK
+        varchar phone
+        varchar display_name
+        boolean biometric_enabled
+        varchar location
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    expenses {
+        uuid id PK
+        uuid user_id FK
+        decimal amount
+        varchar currency
+        uuid category_id FK
+        varchar description
+        varchar provider
+        date bill_date
+        date due_date
+        jsonb line_items
+        varchar source
+        varchar source_document_url
+        boolean is_recurring
+        varchar recurring_frequency
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    incomes {
+        uuid id PK
+        uuid user_id FK
+        decimal amount
+        varchar source
+        varchar frequency
+        date effective_date
+        timestamp created_at
+    }
+
+    categories {
+        uuid id PK
+        uuid user_id FK
+        varchar name
+        varchar icon
+        varchar color
+        boolean is_default
+        uuid parent_category_id FK
+        timestamp created_at
+    }
+
+    budgets {
+        uuid id PK
+        uuid user_id FK
+        varchar month
+        decimal total_budget
+        jsonb category_budgets
+        decimal savings_goal
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    notifications {
+        uuid id PK
+        uuid user_id FK
+        varchar type
+        varchar title
+        text body
+        jsonb data
+        varchar channel
+        timestamp sent_at
+        timestamp read_at
+    }
 ```
 
 
 ## Correctness Properties
 
-*A property is a characteristic or behavior that should hold true across all valid executions of a system — essentially, a formal statement about what the system should do. Properties serve as the bridge between human-readable specifications and machine-verifiable correctness guarantees.*
+*Property คือคุณลักษณะหรือพฤติกรรมที่ควรเป็นจริงในทุกการทำงานที่ถูกต้องของระบบ เป็นข้อกำหนดเชิงรูปนัยเกี่ยวกับสิ่งที่ระบบควรทำ Properties ทำหน้าที่เป็นสะพานเชื่อมระหว่าง specification ที่มนุษย์อ่านได้กับการรับประกันความถูกต้องที่เครื่องตรวจสอบได้*
 
-### Property 1: Signup produces bcrypt hash, never plaintext
+### Property 1: Expense Record Round-Trip (Serialization)
 
-*For any* valid email and password (≥8 characters), after signup the stored `password_hash` in Firestore SHALL be a valid bcrypt hash and SHALL NOT equal the plaintext password.
+*For any* valid ExpenseRecord, การ serialize เป็น JSON แล้ว deserialize กลับ SHALL ให้ผลลัพธ์ที่เทียบเท่ากับ record ต้นฉบับ (serialize → deserialize = identity)
 
-**Validates: Requirements 1.1, 1.5**
+**Validates: Requirements 9.1, 9.3**
 
-### Property 2: Short passwords are rejected
+### Property 2: Expense Record Format Round-Trip (Display)
 
-*For any* password string with length less than 8 characters, the Auth_Service SHALL reject the signup request with a validation error.
+*For any* valid ExpenseRecord, การ format เป็น display string แล้ว parse กลับเป็น structured data SHALL ให้ผลลัพธ์ที่เทียบเท่ากับ record ต้นฉบับ (format → parse = identity)
 
-**Validates: Requirements 1.3**
+**Validates: Requirements 9.2, 9.3**
 
-### Property 3: Invalid emails are rejected
+### Property 3: Email Extraction Completeness
 
-*For any* string that does not conform to a valid email format, the Auth_Service SHALL reject the signup request with a validation error.
+*For any* valid bill email content ที่มีข้อมูลบิล, ผลลัพธ์จาก Data_Extractor SHALL มี field amount (> 0), provider (non-empty), และ billDate (valid date) ครบถ้วน
 
-**Validates: Requirements 1.4**
+**Validates: Requirements 1.1**
 
-### Property 4: Duplicate email signup is rejected
+### Property 4: Image Extraction Line Items Consistency
 
-*For any* email that already exists in the users collection, a subsequent signup attempt with that email SHALL be rejected with an "email already registered" error.
+*For any* valid receipt image ที่สกัดข้อมูลสำเร็จ, ผลรวมของ lineItems.amount ทุกรายการ SHALL เท่ากับ amount (ยอดรวม) ของ ExtractionResult
 
 **Validates: Requirements 1.2**
 
-### Property 5: Signup-then-login round trip
+### Property 5: Extraction Requires User Confirmation
 
-*For any* valid email and password, after a successful signup, logging in with the same email and password SHALL succeed and return a JWT token containing the correct `user_id`.
+*For any* successful extraction result, ระบบ SHALL อยู่ใน state "pending_confirmation" ก่อนที่จะบันทึกเป็น ExpenseRecord (ไม่มี auto-save โดยไม่ผ่านการยืนยัน)
+
+**Validates: Requirements 1.3**
+
+### Property 6: Auto-Categorization Assignment
+
+*For any* valid ExpenseRecord ที่ถูกสร้างขึ้น, Expense_Categorizer SHALL assign category ที่มีอยู่ในระบบ (default หรือ custom) ให้เสมอ โดย result ต้องมี categoryId ที่ valid และ confidence ในช่วง 0.0-1.0
 
 **Validates: Requirements 2.1, 2.4**
 
-### Property 6: Login with invalid credentials fails
+### Property 7: Low Confidence Triggers User Confirmation
 
-*For any* login attempt where the email does not exist or the password does not match the stored hash, the Auth_Service SHALL reject the request with an "invalid credentials" error (without distinguishing which field is wrong).
+*For any* CategorizationResult ที่มี confidence < 0.7, field needsUserConfirmation SHALL เป็น true และสำหรับ confidence >= 0.7 SHALL เป็น false
 
-**Validates: Requirements 2.2, 2.3**
+**Validates: Requirements 2.2**
 
-### Property 7: Invalid or missing JWT returns 401
+### Property 8: User Correction Persistence
 
-*For any* API request (to a protected endpoint) that contains an expired JWT, a malformed JWT, or no JWT at all, the Backend SHALL respond with HTTP 401 Unauthorized.
+*For any* user category correction, ระบบ SHALL บันทึก correction เข้า training data โดยหลังจากบันทึก correction แล้ว query training data ด้วย recordId เดียวกัน SHALL ได้ correctCategory ที่ตรงกัน
 
-**Validates: Requirements 3.1, 3.2, 3.3**
+**Validates: Requirements 2.3**
 
-### Property 8: Data isolation between users
+### Property 9: Dashboard Category Sum Equals Total
 
-*For any* two distinct users A and B, user A SHALL only see their own expense records and SHALL never be able to read, update, or delete expense records belonging to user B. Attempts to access another user's data SHALL return HTTP 403.
+*For any* set of ExpenseRecords ในเดือนใดเดือนหนึ่ง, ผลรวมของค่าใช้จ่ายแยกตามหมวดหมู่ SHALL เท่ากับยอดค่าใช้จ่ายรวมของเดือนนั้น
 
-**Validates: Requirements 3.4, 12.1, 12.2**
+**Validates: Requirements 3.1**
 
-### Property 9: Extracted_via matches source channel
+### Property 10: Category Filter Returns Correct Expenses
 
-*For any* expense created through manual entry, the `extracted_via` field SHALL be `"manual"`. *For any* expense created through image extraction, the `extracted_via` field SHALL be `"image"` and `raw_source_ref` SHALL be set. *For any* expense created through email extraction, the `extracted_via` field SHALL be `"email"` and `raw_source_ref` SHALL be set.
+*For any* category และ set of ExpenseRecords, การ filter ด้วย categoryId SHALL return เฉพาะ records ที่มี categoryId ตรงกัน และจำนวน records ที่ return ต้องเท่ากับจำนวน records ที่มี categoryId นั้นใน dataset
 
-**Validates: Requirements 4.1, 5.5, 6.4**
+**Validates: Requirements 3.3**
 
-### Property 10: Non-positive amounts are rejected
+### Property 11: Historical Data Completeness
 
-*For any* expense creation request where the amount is zero or negative, the Expense_Service SHALL reject the request with an "amount must be positive" error.
+*For any* user ที่มีข้อมูลครบตามช่วงเวลาที่ร้องขอ, การ query ข้อมูลย้อนหลัง N เดือน SHALL return data points ครบ N เดือน โดยไม่มีเดือนที่หายไป
+
+**Validates: Requirements 3.2, 6.4**
+
+### Property 12: Trend Analysis Minimum Data Requirement
+
+*For any* user dataset ที่มีข้อมูลน้อยกว่า 3 เดือน, Trend_Analyzer SHALL return result ที่ flag ว่า insufficient data และไม่ produce trend prediction
+
+**Validates: Requirements 4.1**
+
+### Property 13: Weather-Adjusted Electricity Prediction
+
+*For any* WeatherFactor ที่มี temperatureDeviation ที่มีนัยสำคัญ (|deviation| > threshold), prediction ของค่าไฟฟ้า SHALL แตกต่างจาก base prediction (prediction ที่ไม่มี weather adjustment)
+
+**Validates: Requirements 4.2**
+
+### Property 14: Recurring Expense Detection
+
+*For any* expense history ที่มี pattern ซ้ำๆ ในช่วงเวลาคงที่ (monthly/quarterly/yearly), Trend_Analyzer SHALL ตรวจจับ pattern นั้นและ return RecurringExpense ที่มี frequency ตรงกับ pattern จริง
 
 **Validates: Requirements 4.3**
 
-### Property 11: Currency is always THB
+### Property 15: Trend Spike Warning Trigger
 
-*For any* expense record created in the system (regardless of extraction source), the `currency` field SHALL be `"THB"`.
+*For any* category expense data ที่ค่าใช้จ่ายเดือนปัจจุบันเกินค่าเฉลี่ย 3 เดือนล่าสุดมากกว่า 20%, ระบบ SHALL generate warning ที่ระบุ categoryId และ changePercentage ที่ถูกต้อง
 
 **Validates: Requirements 4.4**
 
-### Property 12: Extraction confidence scores are bounded
+### Property 16: Prediction Confidence Range Invariant
 
-*For any* extraction result from either the OCR_Extractor or Email_Extractor, every confidence score SHALL be a number in the range [0.0, 1.0].
+*For any* PredictionResult หรือ TrendResult ที่ Trend_Analyzer สร้างขึ้น, confidence value SHALL อยู่ในช่วง [0.0, 1.0] เสมอ
 
-**Validates: Requirements 5.3, 6.2**
+**Validates: Requirements 4.5**
 
-### Property 13: Low confidence fields are flagged for review
+### Property 17: Notification Timing Based on Due Date
 
-*For any* extraction result where at least one field has a confidence score below 0.5, the resulting expense record SHALL have `needsReview` set to `true`.
+*For any* recurring expense ที่มี due date, Notification_Service SHALL trigger reminder ตาม lead time ที่กำหนด: 7 วันสำหรับ monthly/quarterly expenses และ 30 วันสำหรับ yearly expenses โดย notification ต้องมี billName, amount, และ dueDate ครบถ้วน
 
-**Validates: Requirements 5.4, 6.3**
+**Validates: Requirements 5.1, 5.3**
 
-### Property 14: Data mapper produces valid Expense records
+### Property 18: Predicted Expense Spike Notification
 
-*For any* raw extraction output, the data mapper SHALL produce an Expense record with a positive `amount`, a `category` that is one of the allowed ExpenseCategory values, and a `dueDate` that is a valid date string.
+*For any* PredictionResult ที่ totalPredicted สูงกว่าค่าเฉลี่ย 3 เดือนล่าสุดเกิน 15%, Notification_Service SHALL generate notification พร้อมรายละเอียดค่าใช้จ่ายที่คาดว่าจะเพิ่มขึ้น
 
-**Validates: Requirements 7.1, 7.2, 8.1**
+**Validates: Requirements 5.2**
 
-### Property 15: Unrecognized categories default to "manual" with review flag
+### Property 19: Budget Threshold Alert
 
-*For any* extraction result where the category string does not match any of the allowed ExpenseCategory values, the data mapper SHALL assign `category = "manual"` and set `needsReview = true`.
+*For any* user ที่มี budget ตั้งไว้ เมื่อ cumulative spending ในเดือนปัจจุบัน >= 80% ของ totalBudget, Notification_Service SHALL trigger budget alert
 
-**Validates: Requirements 7.3, 8.3**
+**Validates: Requirements 5.4**
 
-### Property 16: Expense serialization round trip
+### Property 20: Expense Ratio Calculation and Warning
 
-*For any* valid Expense object, serializing it to JSON and then deserializing the JSON back SHALL produce an object equivalent to the original.
+*For any* valid expenses และ income data, Financial_Planner SHALL คำนวณ ratio = totalExpense / totalIncome อย่างถูกต้อง และเมื่อ ratio > 0.7 ระบบ SHALL flag isHealthy = false พร้อม generate cost reduction suggestions
 
-**Validates: Requirements 7.4, 7.5**
+**Validates: Requirements 6.2, 6.3**
 
-### Property 17: Unpaid bills are sorted by due date ascending
+### Property 21: Income Storage Round-Trip
 
-*For any* set of expense records, filtering to unpaid bills and sorting by `due_date` SHALL produce a list where each item's `due_date` is less than or equal to the next item's `due_date`.
+*For any* valid Income record ที่ผู้ใช้บันทึก, การ store แล้ว retrieve กลับมา SHALL ให้ข้อมูลที่เทียบเท่ากับ record ต้นฉบับ
 
-**Validates: Requirements 9.3**
+**Validates: Requirements 6.1**
 
-### Property 18: Paid plus unpaid equals monthly total
+### Property 22: Budget Plan Category Coverage
 
-*For any* set of expense records in a given month, the sum of paid expense amounts plus the sum of unpaid expense amounts SHALL equal the total expense amount for that month.
+*For any* expense history ของ user, budget plan ที่ Financial_Planner สร้าง SHALL มี categoryBudgets ที่ครอบคลุมทุก category ที่มีค่าใช้จ่ายใน history และ sum ของ categoryBudgets SHALL ไม่เกิน totalBudget
 
-**Validates: Requirements 9.1, 9.4**
+**Validates: Requirements 7.1**
 
-### Property 19: Category distribution sums to total
+### Property 23: Forecast Completeness
 
-*For any* set of expense records in a given month, the sum of amounts across all category groups SHALL equal the total expense amount for that month.
+*For any* forecast request สำหรับ N เดือนข้างหน้า, Financial_Planner SHALL return predictions ครบ N เดือน โดยแต่ละเดือนมี breakdown ครบทุก active category
 
-**Validates: Requirements 9.2**
+**Validates: Requirements 7.2**
 
-### Property 20: Prediction range invariant
+### Property 24: Cost Reduction Suggestions Validity
 
-*For any* prediction result returned by the Prediction_Engine, `predictedMin` SHALL be less than or equal to `predictedMax`, and both SHALL be non-negative numbers.
+*For any* expense history ที่มี category ที่ค่าใช้จ่ายสูงกว่าค่าเฉลี่ยย้อนหลัง, Financial_Planner SHALL suggest ลดค่าใช้จ่ายใน category นั้น โดย suggestedBudget < currentAverage และ potentialSaving > 0
 
-**Validates: Requirements 10.5**
+**Validates: Requirements 7.3**
 
-### Property 21: Insufficient data returns no predictions
+### Property 25: Savings Goal Budget Calculation
 
-*For any* user with fewer than 1 month of historical expense data, the Prediction_Engine SHALL return an insufficient data indicator instead of prediction results.
+*For any* valid income และ savingsGoal (โดยที่ savingsGoal < income), Financial_Planner SHALL คำนวณ max monthly budget = income - savingsGoal และ budget plan ที่สร้างต้องมี totalBudget ไม่เกินค่านี้
 
-**Validates: Requirements 10.6**
+**Validates: Requirements 7.4**
 
-### Property 22: External factor degradation
+### Property 26: Budget Plan Auto-Update on New Expense
 
-*For any* prediction request where one or more external data sources (weather, economic, exchange rate) are unavailable, the Prediction_Engine SHALL still return predictions and SHALL indicate which factors were excluded.
+*For any* existing budget plan, เมื่อ ExpenseRecord ใหม่ถูกเพิ่มเข้าระบบ, budget plan SHALL ถูก update โดย lastUpdated timestamp ต้องเปลี่ยน
 
-**Validates: Requirements 10.7**
+**Validates: Requirements 7.5**
 
-### Property 23: External factors influence respective categories
+### Property 27: Account Deletion Data Removal
 
-*For any* user with sufficient historical data, when weather data is provided, utility category predictions (electricity, water, gas) SHALL differ from predictions without weather data. When economic indicators are provided, insurance and loan predictions SHALL differ. When exchange rate data is provided, applicable predictions SHALL differ.
+*For any* user ที่ request account deletion, หลังจาก deletion process เสร็จสิ้น, query ข้อมูลด้วย userId นั้น SHALL return empty results สำหรับทุก table (expenses, incomes, budgets, notifications)
 
-**Validates: Requirements 10.2, 10.3, 10.4**
-
-### Property 24: Income-to-expense alert thresholds
-
-*For any* user with a set monthly income, when total expenses exceed 90% of income the system SHALL produce a warning alert, and when total expenses exceed 100% of income the system SHALL produce a critical alert. When expenses are at or below 90%, no alert SHALL be produced.
-
-**Validates: Requirements 11.2, 11.3, 11.4, 11.5**
-
-### Property 25: API response envelope conformance
-
-*For any* API response from the Backend, the response body SHALL conform to `{ data, error }` where on success `data` is non-null and `error` is null, and on failure `data` is null and `error` is a non-empty string.
-
-**Validates: Requirements 13.1, 13.2, 13.3**
-
-### Property 26: HTTP status codes match error types
-
-*For any* API response, the HTTP status code SHALL be 200 for successful requests, 400 for validation errors, 401 for authentication errors, 403 for authorization errors, and 500 for internal server errors.
-
-**Validates: Requirements 13.4**
+**Validates: Requirements 8.5**
 
 
 ## Error Handling
 
-### Error Categories and HTTP Status Codes
+### Data Extraction Errors
 
-| Error Type | HTTP Status | `error` Field Example | When |
-|---|---|---|---|
-| Validation Error | 400 | `"amount must be positive"` | Invalid input data |
-| Authentication Error | 401 | `"invalid credentials"` | Bad/missing/expired JWT, wrong password |
-| Authorization Error | 403 | `"access denied"` | User accessing another user's data |
-| Not Found | 404 | `"expense not found"` | Resource doesn't exist for this user |
-| Server Error | 500 | `"internal server error"` | Unexpected failures |
+| Error Case | Handling Strategy | User Feedback |
+|---|---|---|
+| รูปถ่ายคุณภาพต่ำ (เบลอ, มืด, เอียง) | `validateImageQuality()` ตรวจก่อน extract | แจ้งปัญหาพร้อมคำแนะนำถ่ายรูปใหม่ (Req 1.4) |
+| อีเมลไม่มีข้อมูลบิล | `extractFromEmail()` return `success: false` | แจ้งว่าไม่พบข้อมูลบิลในอีเมล (Req 1.5) |
+| OCR สกัดข้อมูลได้บางส่วน | Return partial data พร้อม low confidence | แสดงข้อมูลที่สกัดได้ ให้ผู้ใช้เติมส่วนที่ขาด |
+| Network timeout ระหว่าง extraction | Retry 3 ครั้งด้วย exponential backoff | แจ้งให้ลองใหม่ หรือบันทึก offline แล้ว process ทีหลัง |
 
-### Auth Service Error Handling
+### Categorization Errors
 
-- Invalid email format → 400 with `"invalid email"`
-- Password too short → 400 with `"password too short"`
-- Duplicate email → 400 with `"email already registered"`
-- Wrong password or nonexistent email → 401 with `"invalid credentials"` (same message for both to prevent user enumeration)
-- JWT expired/invalid/missing → 401 with `"unauthorized"`
+| Error Case | Handling Strategy | User Feedback |
+|---|---|---|
+| Confidence ต่ำกว่า 70% | Flag `needsUserConfirmation: true` | แสดง top 3 categories ให้ผู้ใช้เลือก (Req 2.2) |
+| ไม่มี category ที่เหมาะสม | Assign "อื่นๆ" พร้อม low confidence | แนะนำให้สร้าง custom category |
+| Custom category ชื่อซ้ำ | Reject creation, return error | แจ้งว่าชื่อหมวดหมู่ซ้ำ |
 
-### Expense Service Error Handling
+### Trend Analysis Errors
 
-- Non-positive amount → 400 with `"amount must be positive"`
-- Invalid category → 400 with `"invalid category"`
-- Invalid date → 400 with `"invalid due date"`
-- Expense not found or belongs to another user → 403 with `"access denied"`
+| Error Case | Handling Strategy | User Feedback |
+|---|---|---|
+| ข้อมูลไม่ถึง 3 เดือน | Return `insufficient_data` flag | แจ้งว่าต้องใช้ข้อมูลอย่างน้อย 3 เดือน (Req 4.1) |
+| Weather API ไม่ตอบ | ใช้ prediction โดยไม่มี weather adjustment | แสดง prediction พร้อมหมายเหตุว่าไม่รวมปัจจัยสภาพอากาศ |
+| ML model prediction ล้มเหลว | Fallback เป็น simple moving average | แสดงผลพร้อม lower confidence |
 
-### AI Extraction Error Handling
+### Financial Planning Errors
 
-- Unreadable image → Return `ApiResponse` with error `"image is unreadable or too low quality"`
-- Unparseable email → Return `ApiResponse` with error `"email format is unsupported"`
-- Low confidence fields → Set `needsReview = true` on the expense record; the frontend highlights flagged fields
-- Unrecognized category → Default to `"manual"` category, set `needsReview = true`
-- AI service timeout → Return 500 with `"extraction service unavailable"`
+| Error Case | Handling Strategy | User Feedback |
+|---|---|---|
+| ไม่มีข้อมูลรายได้ | ข้ามการคำนวณ ratio | แสดงเฉพาะข้อมูลค่าใช้จ่าย (Req 6.5) |
+| Savings goal > income | Reject, return validation error | แจ้งว่าเป้าหมายการออมเกินรายได้ |
+| Division by zero (income = 0) | Return ratio = infinity, flag error | แจ้งให้บันทึกข้อมูลรายได้ |
 
-### Prediction Engine Error Handling
+### Security & Infrastructure Errors
 
-- Insufficient historical data (< 1 month) → Return `ApiResponse` with data containing an `insufficientData: true` flag and a user-facing message
-- External API failure (weather/economic/exchange) → Continue with available data, include `excludedFactors` array in the response indicating which sources were unavailable
-- All external APIs fail → Generate predictions from historical data only, indicate all external factors excluded
+| Error Case | Handling Strategy | User Feedback |
+|---|---|---|
+| Authentication failure | Lock account หลัง 5 ครั้ง, require email verification | แจ้งรหัสผ่านไม่ถูกต้อง |
+| Cloud sync failure | Queue changes locally, retry เมื่อ online | แสดง sync status indicator |
+| Data corruption detected | Restore จาก latest backup | แจ้งผู้ใช้ว่ากำลังกู้คืนข้อมูล |
 
-### Frontend Error Handling Strategy
-
-- All API calls go through a centralized `api.ts` module that parses the `{ data, error }` envelope
-- On `error !== null`, display the error message via a toast/snackbar notification
-- On 401 responses, redirect to the login screen and clear the auth store
-- On network errors, display an offline indicator and retry with exponential backoff
-- Extraction review screens show inline validation errors for low-confidence fields
 
 ## Testing Strategy
 
-### Testing Framework and Libraries
+### ภาพรวม
 
-- **Unit & Integration Tests**: Jest (with `ts-jest` for TypeScript)
-- **Property-Based Testing**: `fast-check` (JavaScript/TypeScript PBT library)
-- **React Native Component Tests**: React Native Testing Library
-- **API Testing**: Supertest (for Express-based Cloud Functions)
+ใช้ Dual Testing Approach ที่ประกอบด้วย Unit Tests และ Property-Based Tests ทำงานร่วมกัน:
+
+- **Unit Tests**: ทดสอบ specific examples, edge cases, error conditions
+- **Property-Based Tests**: ทดสอบ universal properties ข้าม inputs ทั้งหมด
+- ทั้งสองแบบจำเป็นและเสริมกัน — unit tests จับ concrete bugs, property tests ตรวจสอบ general correctness
+
+### Technology Stack สำหรับ Testing
+
+| Component | Technology |
+|---|---|
+| Unit Testing Framework | Jest (TypeScript/Node.js backend), Jest + React Native Testing Library (Mobile) |
+| Property-Based Testing Library | **fast-check** (TypeScript) |
+| API Testing | Supertest |
+| E2E Testing | Detox (React Native) |
+| CI/CD | GitHub Actions |
 
 ### Property-Based Testing Configuration
 
-Each property-based test MUST:
-- Use `fast-check` with a minimum of 100 iterations (`numRuns: 100`)
-- Reference the design document property it validates via a comment tag
-- Tag format: `// Feature: billbuddy-mvp, Property {number}: {property_title}`
+- ใช้ **fast-check** เป็น PBT library สำหรับ TypeScript
+- แต่ละ property test ต้อง run อย่างน้อย **100 iterations**
+- แต่ละ property test ต้องมี comment อ้างอิง design property
+- Tag format: **Feature: bill-sense, Property {number}: {property_text}**
+- แต่ละ correctness property ต้อง implement ด้วย **single property-based test** เท่านั้น
 
-### Test Organization
+### Unit Test Coverage
 
-```
-functions/
-├── src/
-│   └── ...
-└── tests/
-    ├── unit/
-    │   ├── authService.test.ts          # Properties 1-6
-    │   ├── expenseService.test.ts       # Properties 9-11
-    │   ├── dataMapper.test.ts           # Properties 14-16
-    │   ├── predictionEngine.test.ts     # Properties 20-23
-    │   └── apiResponse.test.ts          # Properties 25-26
-    ├── property/
-    │   ├── auth.property.test.ts        # PBT for Properties 1-6
-    │   ├── expense.property.test.ts     # PBT for Properties 9-13
-    │   ├── dataMapper.property.test.ts  # PBT for Properties 14-16
-    │   ├── dashboard.property.test.ts   # PBT for Properties 17-19
-    │   ├── prediction.property.test.ts  # PBT for Properties 20-24
-    │   └── api.property.test.ts         # PBT for Properties 25-26
-    └── integration/
-        ├── authFlow.test.ts             # Signup → Login → Token verification
-        ├── expenseFlow.test.ts          # Create → Read → Update → Delete
-        ├── extractionFlow.test.ts       # Upload → Extract → Map → Store
-        └── dataIsolation.test.ts        # Property 8: Cross-user access prevention
+Unit tests ควรเน้นที่:
 
-billbuddy/
-└── __tests__/
-    ├── components/
-    │   ├── ManualExpenseForm.test.tsx
-    │   ├── ExtractionReview.test.tsx
-    │   └── Dashboard.test.tsx
-    └── hooks/
-        ├── useAuth.test.ts
-        └── useExpenses.test.ts
-```
+1. **Specific Examples**:
+   - ทดสอบ extraction จากตัวอย่างอีเมลบิลค่าไฟ PEA, MEA
+   - ทดสอบ extraction จากตัวอย่างสลิป 7-Eleven, Makro
+   - ทดสอบ categorization ของ expense ที่รู้หมวดหมู่แน่นอน
 
-### Unit Test Coverage Targets
+2. **Edge Cases**:
+   - รูปถ่ายคุณภาพต่ำ (Req 1.4)
+   - อีเมลที่ไม่มีข้อมูลบิล (Req 1.5)
+   - ผู้ใช้ไม่มีข้อมูลรายได้ (Req 6.5)
+   - ข้อมูลน้อยกว่า 3 เดือนสำหรับ trend analysis (Req 4.1)
+   - Budget = 0 หรือ income = 0
 
-Unit tests focus on specific examples and edge cases:
-- Auth: signup with exact boundary password (8 chars), login with correct/incorrect credentials
-- Expense: creation with each category, boundary amounts (0, -1, 0.01)
-- Data Mapper: known OCR output → expected Expense, unrecognized category → "manual"
-- Dashboard: empty expense list → empty state, single expense → correct totals
-- Predictions: exactly 1 month of data → predictions generated, 0 months → insufficient data message
+3. **Error Conditions**:
+   - Network timeout ระหว่าง extraction
+   - Weather API ไม่ตอบ
+   - Invalid JSON format
+   - Duplicate custom category names
 
-### Property Test Coverage Targets
+4. **Integration Points**:
+   - Data_Extractor → Expense_Categorizer pipeline
+   - Trend_Analyzer → Notification_Service trigger
+   - Financial_Planner → Budget auto-update flow
+   - New device login → verification code flow (Req 8.3)
 
-Property tests verify universal correctness across randomized inputs:
-- Each of the 26 correctness properties maps to exactly one property-based test
-- Generators produce random valid/invalid emails, passwords, expense amounts, categories, dates, confidence scores, and extraction results
-- `fast-check` arbitraries are used to generate the full domain of inputs for each property
+### Property Test Mapping
 
-### Example Property Test Structure
-
-```typescript
-import fc from 'fast-check';
-
-// Feature: billbuddy-mvp, Property 16: Expense serialization round trip
-describe('Property 16: Expense serialization round trip', () => {
-  it('should produce equivalent object after serialize then deserialize', () => {
-    fc.assert(
-      fc.property(
-        validExpenseArbitrary(), // custom arbitrary generating valid Expense objects
-        (expense) => {
-          const serialized = serializeExpense(expense);
-          const deserialized = deserializeExpense(serialized);
-          expect(deserialized).toEqual(expense);
-        }
-      ),
-      { numRuns: 100 }
-    );
-  });
-});
-```
+| Property | Test Description | fast-check Arbitraries |
+|---|---|---|
+| Property 1 | Serialize → Deserialize round-trip | `fc.record()` สำหรับ ExpenseRecord |
+| Property 2 | Format → Parse round-trip | `fc.record()` สำหรับ ExpenseRecord |
+| Property 3 | Email extraction field completeness | `fc.string()` สำหรับ valid bill email templates |
+| Property 4 | Line items sum = total amount | `fc.array(fc.record())` สำหรับ LineItem[] |
+| Property 5 | State = pending_confirmation after extraction | `fc.record()` สำหรับ ExtractionResult |
+| Property 6 | Category always assigned | `fc.record()` สำหรับ ExpenseRecord |
+| Property 7 | Confidence < 0.7 → needsUserConfirmation | `fc.float({min:0, max:1})` |
+| Property 8 | Correction persisted correctly | `fc.record()` สำหรับ correction data |
+| Property 9 | Category sums = total | `fc.array(fc.record())` สำหรับ ExpenseRecord[] |
+| Property 10 | Category filter correctness | `fc.array(fc.record())` + `fc.string()` |
+| Property 11 | Historical data point completeness | `fc.integer()` สำหรับ month count |
+| Property 12 | Insufficient data flag | `fc.array()` with length < 3 |
+| Property 13 | Weather deviation adjusts prediction | `fc.float()` สำหรับ temperature deviation |
+| Property 14 | Recurring pattern detection | Synthetic recurring data generator |
+| Property 15 | >20% spike triggers warning | `fc.array(fc.float())` สำหรับ monthly amounts |
+| Property 16 | Confidence ∈ [0.0, 1.0] | `fc.record()` สำหรับ prediction inputs |
+| Property 17 | Notification timing by frequency | `fc.date()` + `fc.constantFrom('monthly','yearly')` |
+| Property 18 | >15% predicted spike → notification | `fc.float()` สำหรับ predicted vs average |
+| Property 19 | >=80% budget → alert | `fc.float()` สำหรับ spending/budget ratio |
+| Property 20 | Ratio calculation + >0.7 warning | `fc.float()` สำหรับ expense/income |
+| Property 21 | Income store → retrieve round-trip | `fc.record()` สำหรับ Income |
+| Property 22 | Budget covers all active categories | `fc.array(fc.record())` สำหรับ expense history |
+| Property 23 | Forecast returns N months complete | `fc.integer({min:1, max:12})` |
+| Property 24 | Suggestion: suggestedBudget < currentAvg | `fc.array(fc.float())` สำหรับ category amounts |
+| Property 25 | Max budget = income - savingsGoal | `fc.float()` สำหรับ income, savingsGoal |
+| Property 26 | Plan lastUpdated changes on new expense | `fc.record()` สำหรับ new ExpenseRecord |
+| Property 27 | Deletion removes all user data | `fc.uuid()` สำหรับ userId |

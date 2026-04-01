@@ -1,179 +1,125 @@
-# Requirements Document
+# Requirements Document - BillSense
 
 ## Introduction
 
-BillBuddy is an AI-powered mobile application for tracking domestic expenses (electricity, water, insurance, subscriptions, loans, car installments, gas, etc.). The MVP (v1.0.0) provides user authentication, manual and AI-automated expense entry (via camera OCR and email parsing), expense categorization, a visual financial dashboard, and predictive financial analysis using external data sources. The application targets individual users who want a consolidated, intelligent view of their household bills and spending patterns.
+BillSense เป็น Mobile Application ที่ช่วยจัดการบิลและกระแสเงินสดในครัวเรือน โดยใช้ AI สกัดข้อมูลจากอีเมลบิลและรูปถ่ายสลิป จัดหมวดหมู่ค่าใช้จ่ายอัตโนมัติ วิเคราะห์แนวโน้มด้วย Machine Learning และนำเสนอข้อมูลผ่าน Dashboard พร้อมแจ้งเตือนล่วงหน้าเกี่ยวกับค่าใช้จ่ายก้อนใหญ่ที่กำลังจะมาถึง เพื่อแก้ปัญหาการทำบัญชีครัวเรือนที่น่าเบื่อและการช็อตปลายเดือนจากค่าใช้จ่ายที่ไม่ได้คาดการณ์ไว้
 
 ## Glossary
 
-- **App**: The BillBuddy React Native mobile application running on iOS and Android.
-- **Backend**: The Firebase-based server infrastructure including Firestore, Cloud Functions, and authentication services.
-- **Auth_Service**: The authentication module responsible for user signup, login, JWT token issuance, and session management.
-- **Expense_Service**: The backend module responsible for creating, reading, updating, and deleting expense records in Firestore.
-- **OCR_Extractor**: The AI-powered Cloud Function that processes camera-captured images of bills and receipts to extract structured expense data.
-- **Email_Extractor**: The AI-powered Cloud Function that processes forwarded email receipts to extract structured expense data.
-- **Prediction_Engine**: The AI module that analyzes historical expense data combined with external factors (weather, economic indicators, exchange rates) to forecast future expenses.
-- **Dashboard**: The main visual interface displaying charts, summaries, and financial status to the user.
-- **Expense_Record**: A single expense entry in Firestore conforming to the Expense schema (id, user_id, category, amount, currency, due_date, is_paid, extracted_via, raw_source_ref, created_at).
-- **Confidence_Score**: A numeric value (0.0 to 1.0) returned by AI extraction services indicating the reliability of the extracted data.
-- **THB**: Thai Baht, the default currency used in the application.
+- **BillSense_App**: แอปพลิเคชันมือถือ BillSense สำหรับจัดการค่าใช้จ่ายครัวเรือน
+- **Data_Extractor**: โมดูล AI ที่ทำหน้าที่สกัดข้อมูลค่าใช้จ่ายจากอีเมลบิลและรูปถ่ายสลิป
+- **Expense_Categorizer**: โมดูลที่จัดหมวดหมู่ค่าใช้จ่ายอัตโนมัติ เช่น ค่าไฟ ค่าน้ำ ค่าเน็ต ของใช้ในบ้าน
+- **Trend_Analyzer**: โมดูล Machine Learning ที่วิเคราะห์แนวโน้มค่าใช้จ่ายจากข้อมูลสถิติ สภาพอากาศ และพฤติกรรมผู้ใช้
+- **Dashboard**: หน้าจอแสดงผลข้อมูลค่าใช้จ่ายในรูปแบบกราฟและแผนภูมิ
+- **Financial_Planner**: โมดูลวางแผนการเงินที่ประเมินค่าใช้จ่ายเทียบกับรายได้ของผู้ใช้
+- **Cloud_Database**: ฐานข้อมูลบน Cloud ที่จัดเก็บข้อมูลค่าใช้จ่ายและประวัติการใช้งาน
+- **Notification_Service**: บริการแจ้งเตือนผู้ใช้เกี่ยวกับค่าใช้จ่ายที่กำลังจะมาถึงและคำแนะนำ
+- **Bill_Document**: เอกสารบิลที่ผู้ใช้ส่งเข้าระบบ ได้แก่ อีเมลบิลหรือรูปถ่ายสลิป
+- **Expense_Record**: ข้อมูลค่าใช้จ่ายที่ถูกสกัดและจัดเก็บในระบบ ประกอบด้วย จำนวนเงิน วันที่ หมวดหมู่ และแหล่งที่มา
 
 ## Requirements
 
-### Requirement 1: User Signup
+### Requirement 1: การนำเข้าข้อมูลบิลผ่านอีเมลและรูปถ่าย
 
-**User Story:** As a new user, I want to create an account with my email and password, so that I can securely access BillBuddy.
-
-#### Acceptance Criteria
-
-1. WHEN a user submits a valid email and password, THE Auth_Service SHALL create a new user record in Firestore with a bcrypt-hashed password and return a JWT token.
-2. WHEN a user submits an email that already exists in the system, THE Auth_Service SHALL reject the signup request and return an "email already registered" error.
-3. WHEN a user submits a password shorter than 8 characters, THE Auth_Service SHALL reject the signup request and return a "password too short" error.
-4. WHEN a user submits an invalid email format, THE Auth_Service SHALL reject the signup request and return an "invalid email" error.
-5. THE Auth_Service SHALL store only the bcrypt-hashed password and never persist the plaintext password.
-
-### Requirement 2: User Login
-
-**User Story:** As a returning user, I want to log in with my email and password, so that I can access my expense data.
+**User Story:** ในฐานะผู้ใช้งาน ฉันต้องการ Forward อีเมลบิลหรือถ่ายรูปสลิปเข้าแอป เพื่อให้ระบบบันทึกค่าใช้จ่ายอัตโนมัติโดยไม่ต้องกรอกข้อมูลเอง
 
 #### Acceptance Criteria
 
-1. WHEN a user submits valid credentials, THE Auth_Service SHALL verify the password against the stored bcrypt hash and return a JWT token.
-2. WHEN a user submits an incorrect password, THE Auth_Service SHALL reject the login request and return an "invalid credentials" error.
-3. WHEN a user submits an email that does not exist, THE Auth_Service SHALL reject the login request and return an "invalid credentials" error.
-4. THE Auth_Service SHALL include the user_id in the JWT token payload for downstream authorization.
+1. WHEN ผู้ใช้ Forward อีเมลบิลค่าไฟ ค่าน้ำ หรือค่าเน็ตเข้าระบบ, THE Data_Extractor SHALL สกัดข้อมูลจำนวนเงิน วันครบกำหนดชำระ และชื่อผู้ให้บริการจากอีเมลภายใน 10 วินาที
+2. WHEN ผู้ใช้ถ่ายรูปสลิปซื้อของเข้าบ้าน, THE Data_Extractor SHALL สกัดรายการสินค้า จำนวนเงินแต่ละรายการ และยอดรวมจากรูปถ่ายภายใน 15 วินาที
+3. WHEN Data_Extractor สกัดข้อมูลเสร็จสิ้น, THE BillSense_App SHALL แสดงข้อมูลที่สกัดได้ให้ผู้ใช้ยืนยันความถูกต้องก่อนบันทึก
+4. IF รูปถ่ายมีคุณภาพต่ำจนไม่สามารถสกัดข้อมูลได้, THEN THE BillSense_App SHALL แจ้งผู้ใช้ให้ถ่ายรูปใหม่พร้อมคำแนะนำการถ่ายรูปที่ชัดเจน
+5. IF อีเมลไม่มีข้อมูลบิลที่สามารถสกัดได้, THEN THE BillSense_App SHALL แจ้งผู้ใช้ว่าไม่พบข้อมูลบิลในอีเมลดังกล่าว
 
-### Requirement 3: JWT Authentication Enforcement
+### Requirement 2: การจัดหมวดหมู่ค่าใช้จ่ายอัตโนมัติ
 
-**User Story:** As a user, I want all my data requests to be authenticated, so that my financial data remains secure.
-
-#### Acceptance Criteria
-
-1. THE Backend SHALL verify the JWT token on every incoming API request before processing the request.
-2. WHEN a request contains an expired or invalid JWT token, THE Backend SHALL reject the request with a 401 Unauthorized status.
-3. WHEN a request contains no JWT token, THE Backend SHALL reject the request with a 401 Unauthorized status.
-4. THE Backend SHALL scope every Firestore query to the authenticated user_id extracted from the JWT token.
-
-### Requirement 4: Manual Expense Entry
-
-**User Story:** As a user, I want to manually enter an expense, so that I can track bills that are not available digitally.
+**User Story:** ในฐานะผู้ใช้งาน ฉันต้องการให้ระบบจัดหมวดหมู่ค่าใช้จ่ายอัตโนมัติ เพื่อให้เห็นภาพรวมว่าเงินถูกใช้ไปกับอะไรบ้าง
 
 #### Acceptance Criteria
 
-1. WHEN a user submits a manual expense with category, amount, due_date, and is_paid status, THE Expense_Service SHALL create an Expense_Record with extracted_via set to "manual".
-2. THE App SHALL provide a form with fields for category (selectable from: electricity, water, insurance, loan, gas, manual), amount (numeric), due_date (date picker), and is_paid (toggle).
-3. WHEN a user submits an expense with a non-positive amount, THE Expense_Service SHALL reject the entry and return an "amount must be positive" error.
-4. THE Expense_Service SHALL set the currency field to "THB" for all manually created Expense_Records.
-5. WHEN a manual expense is successfully created, THE App SHALL display a confirmation message and navigate the user back to the Dashboard.
+1. WHEN Expense_Record ถูกสร้างขึ้น, THE Expense_Categorizer SHALL จัดหมวดหมู่ค่าใช้จ่ายอัตโนมัติตามประเภท เช่น สาธารณูปโภค (ค่าไฟ ค่าน้ำ ค่าเน็ต) ของใช้ในบ้าน อาหาร และอื่นๆ
+2. WHEN Expense_Categorizer จัดหมวดหมู่ไม่ได้อย่างมั่นใจ (confidence ต่ำกว่า 70%), THE BillSense_App SHALL ให้ผู้ใช้เลือกหมวดหมู่ด้วยตนเอง
+3. WHEN ผู้ใช้แก้ไขหมวดหมู่ที่ระบบจัดให้, THE Expense_Categorizer SHALL เรียนรู้จากการแก้ไขเพื่อปรับปรุงความแม่นยำในการจัดหมวดหมู่ครั้งถัดไป
+4. THE Expense_Categorizer SHALL รองรับหมวดหมู่ที่ผู้ใช้สร้างขึ้นเองนอกเหนือจากหมวดหมู่เริ่มต้น
 
-### Requirement 5: AI Expense Extraction from Camera Images
+### Requirement 3: Dashboard แสดงผลข้อมูลค่าใช้จ่าย
 
-**User Story:** As a user, I want to take a photo of a bill or receipt, so that BillBuddy can automatically extract the expense details.
-
-#### Acceptance Criteria
-
-1. WHEN a user captures or selects an image, THE App SHALL upload the image to Firebase Storage via a secure, authenticated connection.
-2. WHEN an image is uploaded, THE OCR_Extractor SHALL process the image and extract the amount, category, and due_date into a structured Expense_Record.
-3. THE OCR_Extractor SHALL return a Confidence_Score between 0.0 and 1.0 for each extracted field.
-4. WHEN the OCR_Extractor returns a Confidence_Score below 0.5 for any field, THE App SHALL highlight the low-confidence field and prompt the user to review and correct the value.
-5. WHEN the OCR_Extractor successfully extracts data, THE Expense_Service SHALL create an Expense_Record with extracted_via set to "image" and raw_source_ref set to the Firebase Storage URL.
-6. IF the OCR_Extractor cannot read the image, THEN THE OCR_Extractor SHALL return a descriptive error message indicating the image is unreadable.
-7. THE Backend SHALL delete the uploaded image from Firebase Storage within 24 hours after extraction to minimize PII retention.
-
-### Requirement 6: AI Expense Extraction from Email Receipts
-
-**User Story:** As a user, I want to forward email receipts to BillBuddy, so that expense details are automatically extracted.
+**User Story:** ในฐานะผู้ใช้งาน ฉันต้องการเห็นภาพรวมค่าใช้จ่ายในรูปแบบกราฟและแผนภูมิ เพื่อให้เข้าใจสถานะการเงินของครัวเรือนได้ง่าย
 
 #### Acceptance Criteria
 
-1. WHEN an email receipt is received via webhook, THE Email_Extractor SHALL parse the email body and attachments to extract amount, category, and due_date.
-2. THE Email_Extractor SHALL return a Confidence_Score between 0.0 and 1.0 for each extracted field.
-3. WHEN the Email_Extractor returns a Confidence_Score below 0.5 for any field, THE App SHALL highlight the low-confidence field and prompt the user to review and correct the value.
-4. WHEN the Email_Extractor successfully extracts data, THE Expense_Service SHALL create an Expense_Record with extracted_via set to "email" and raw_source_ref set to the email identifier.
-5. IF the Email_Extractor cannot parse the email content, THEN THE Email_Extractor SHALL return a descriptive error message indicating the email format is unsupported.
-6. THE Email_Extractor SHALL scrub any PII from the raw email content before storing the reference.
+1. THE Dashboard SHALL แสดงยอดค่าใช้จ่ายรวมของเดือนปัจจุบันแยกตามหมวดหมู่ในรูปแบบแผนภูมิวงกลม
+2. THE Dashboard SHALL แสดงกราฟเปรียบเทียบค่าใช้จ่ายรายเดือนย้อนหลัง 12 เดือน
+3. WHEN ผู้ใช้เลือกหมวดหมู่ใดหมวดหมู่หนึ่งบน Dashboard, THE BillSense_App SHALL แสดงรายละเอียดค่าใช้จ่ายทั้งหมดในหมวดหมู่นั้น
+4. THE Dashboard SHALL แสดงอัตราส่วนค่าใช้จ่ายต่อรายได้ของผู้ใช้ในรูปแบบที่เข้าใจง่าย
+5. WHEN ผู้ใช้เปิดแอป, THE Dashboard SHALL โหลดข้อมูลและแสดงผลภายใน 3 วินาที
 
-### Requirement 7: AI Extraction Data Mapping (Parser)
+### Requirement 4: การวิเคราะห์แนวโน้มค่าใช้จ่าย
 
-**User Story:** As a developer, I want the AI extraction output to be reliably mapped to the Expense interface, so that data integrity is maintained.
-
-#### Acceptance Criteria
-
-1. WHEN the OCR_Extractor or Email_Extractor returns raw extraction output, THE Backend SHALL parse the output into a valid Expense_Record conforming to the Expense TypeScript interface.
-2. THE Backend SHALL validate that the parsed amount is a positive number, category is one of the allowed values (electricity, water, insurance, loan, gas, manual), and due_date is a valid date.
-3. IF the parsed data contains an unrecognized category, THEN THE Backend SHALL assign the category "manual" and flag the record for user review.
-4. THE Expense_Serializer SHALL format Expense_Record objects into valid JSON matching the Firestore expense schema.
-5. FOR ALL valid Expense_Record objects, parsing the serialized JSON back into an Expense_Record SHALL produce an equivalent object (round-trip property).
-
-### Requirement 8: Expense Categorization
-
-**User Story:** As a user, I want my expenses to be categorized, so that I can understand my spending by type.
+**User Story:** ในฐานะผู้ใช้งาน ฉันต้องการให้ระบบวิเคราะห์แนวโน้มค่าใช้จ่ายจากสถิติสภาพอากาศและพฤติกรรมการใช้งาน เพื่อเตรียมตัวรับมือกับค่าใช้จ่ายที่อาจเพิ่มขึ้น
 
 #### Acceptance Criteria
 
-1. THE Expense_Service SHALL support the following categories: electricity, water, insurance, loan, gas, and manual.
-2. WHEN an AI extractor identifies a bill type, THE Backend SHALL map the identified type to one of the supported categories.
-3. WHEN the AI extractor cannot determine the category, THE Backend SHALL assign the "manual" category and prompt the user to select the correct category.
-4. THE App SHALL allow the user to change the category of any Expense_Record after creation.
+1. THE Trend_Analyzer SHALL วิเคราะห์แนวโน้มค่าใช้จ่ายรายหมวดหมู่โดยใช้ข้อมูลย้อนหลังอย่างน้อย 3 เดือน
+2. WHEN ข้อมูลสภาพอากาศบ่งชี้ว่าอุณหภูมิจะสูงขึ้นหรือต่ำลงอย่างมีนัยสำคัญ, THE Trend_Analyzer SHALL ปรับการคาดการณ์ค่าไฟฟ้าตามสหสัมพันธ์ระหว่างอุณหภูมิและการใช้ไฟฟ้าของผู้ใช้
+3. THE Trend_Analyzer SHALL ระบุค่าใช้จ่ายที่เกิดขึ้นเป็นรอบ (เช่น รายเดือน รายไตรมาส รายปี) จากข้อมูลประวัติของผู้ใช้
+4. WHEN Trend_Analyzer ตรวจพบว่าค่าใช้จ่ายในหมวดหมู่ใดมีแนวโน้มเพิ่มขึ้นเกิน 20% เมื่อเทียบกับค่าเฉลี่ย 3 เดือนล่าสุด, THE BillSense_App SHALL แจ้งเตือนผู้ใช้พร้อมระบุหมวดหมู่และอัตราการเพิ่มขึ้น
+5. THE Trend_Analyzer SHALL แสดงค่าความเชื่อมั่น (confidence level) ของการคาดการณ์แต่ละรายการ
 
-### Requirement 9: Visual Dashboard
+### Requirement 5: การแจ้งเตือนค่าใช้จ่ายล่วงหน้า
 
-**User Story:** As a user, I want to see a visual dashboard of my financial status, so that I can quickly understand my spending patterns.
-
-#### Acceptance Criteria
-
-1. THE Dashboard SHALL display a summary of total expenses for the current month.
-2. THE Dashboard SHALL display a pie chart or bar chart showing expense distribution by category.
-3. THE Dashboard SHALL display a list of upcoming unpaid bills sorted by due_date in ascending order.
-4. THE Dashboard SHALL display the total paid versus unpaid amounts for the current month.
-5. WHEN the user has no expenses recorded, THE Dashboard SHALL display an empty state message guiding the user to add their first expense.
-6. WHEN new Expense_Records are created, THE Dashboard SHALL reflect the updated data within 5 seconds of navigating to the Dashboard screen.
-
-### Requirement 10: Predictive Financial Analysis
-
-**User Story:** As a user, I want BillBuddy to predict my future expenses, so that I can plan my budget proactively.
+**User Story:** ในฐานะผู้ใช้งาน ฉันต้องการได้รับการแจ้งเตือนล่วงหน้าเกี่ยวกับค่าใช้จ่ายก้อนใหญ่ที่กำลังจะมาถึง เพื่อเตรียมเงินไว้ล่วงหน้าและไม่ช็อตปลายเดือน
 
 #### Acceptance Criteria
 
-1. THE Prediction_Engine SHALL analyze the user's historical expense data (minimum 1 month of records) to generate predictions for the next month.
-2. THE Prediction_Engine SHALL incorporate weather data (via Weather API) as a factor for utility-related expense predictions (electricity, water, gas).
-3. THE Prediction_Engine SHALL incorporate economic indicators (via external API) as a factor for insurance and loan-related expense predictions.
-4. THE Prediction_Engine SHALL incorporate exchange rate data (via Exchange Rate API) when the user has expenses affected by currency fluctuations.
-5. WHEN the Prediction_Engine generates a forecast, THE Prediction_Engine SHALL return a predicted amount range (minimum and maximum) for each expense category.
-6. WHEN the user has fewer than 1 month of historical data, THE Prediction_Engine SHALL display a message indicating insufficient data for predictions.
-7. IF an external data source (weather, economic, exchange rate API) is unavailable, THEN THE Prediction_Engine SHALL generate predictions using only available data and indicate which factors were excluded.
+1. WHEN ถึง 7 วันก่อนวันครบกำหนดชำระบิล, THE Notification_Service SHALL แจ้งเตือนผู้ใช้พร้อมระบุชื่อบิล จำนวนเงิน และวันครบกำหนด
+2. WHEN Trend_Analyzer คาดการณ์ว่าเดือนถัดไปจะมีค่าใช้จ่ายรวมสูงกว่าค่าเฉลี่ย 3 เดือนล่าสุดเกิน 15%, THE Notification_Service SHALL แจ้งเตือนผู้ใช้ล่วงหน้าพร้อมรายละเอียดค่าใช้จ่ายที่คาดว่าจะเพิ่มขึ้น
+3. THE Notification_Service SHALL แจ้งเตือนผู้ใช้เกี่ยวกับค่าใช้จ่ายรายปีล่วงหน้า 30 วัน (เช่น ค่าประกัน ค่าภาษี)
+4. WHEN ค่าใช้จ่ายสะสมในเดือนปัจจุบันเกิน 80% ของงบประมาณที่ผู้ใช้ตั้งไว้, THE Notification_Service SHALL แจ้งเตือนผู้ใช้ว่าใกล้ถึงขีดจำกัดงบประมาณ
+5. THE BillSense_App SHALL อนุญาตให้ผู้ใช้ตั้งค่าความถี่และช่องทางการแจ้งเตือน (Push Notification, อีเมล)
 
-### Requirement 11: Income/Expense Compatibility Analysis
+### Requirement 6: การประเมินค่าใช้จ่ายเทียบกับรายได้
 
-**User Story:** As a user, I want to understand whether my income covers my expenses, so that I can manage my finances responsibly.
+**User Story:** ในฐานะผู้ใช้งาน ฉันต้องการให้ระบบวิเคราะห์ค่าใช้จ่ายเทียบกับเงินเดือน เพื่อให้รู้ว่าสัดส่วนค่าใช้จ่ายครัวเรือนเหมาะสมหรือไม่
 
 #### Acceptance Criteria
 
-1. THE App SHALL allow the user to input their monthly income amount.
-2. WHEN the user has set a monthly income, THE Dashboard SHALL display the income-to-expense ratio for the current month.
-3. WHEN total expenses exceed 90% of the monthly income, THE App SHALL display a warning notification to the user.
-4. WHEN total expenses exceed 100% of the monthly income, THE App SHALL display a critical alert indicating overspending.
-5. THE Dashboard SHALL display a visual indicator (color-coded) showing the income versus expense balance status.
+1. WHEN ผู้ใช้บันทึกข้อมูลรายได้ (เงินเดือนหรือรายได้อื่น), THE BillSense_App SHALL จัดเก็บข้อมูลรายได้ใน Cloud_Database อย่างปลอดภัย
+2. THE Financial_Planner SHALL คำนวณอัตราส่วนค่าใช้จ่ายครัวเรือนต่อรายได้รวมของผู้ใช้ทุกสิ้นเดือน
+3. WHEN อัตราส่วนค่าใช้จ่ายต่อรายได้เกิน 70%, THE Financial_Planner SHALL แจ้งเตือนผู้ใช้พร้อมคำแนะนำหมวดหมู่ที่สามารถลดค่าใช้จ่ายได้
+4. THE Financial_Planner SHALL แสดงการเปรียบเทียบอัตราส่วนค่าใช้จ่ายต่อรายได้ย้อนหลัง 6 เดือน
+5. IF ผู้ใช้ไม่ได้บันทึกข้อมูลรายได้, THEN THE BillSense_App SHALL แสดงเฉพาะข้อมูลค่าใช้จ่ายโดยไม่แสดงการวิเคราะห์อัตราส่วนต่อรายได้
 
-### Requirement 12: Data Isolation and Security
+### Requirement 7: การวางแผนการเงินครัวเรือน
 
-**User Story:** As a user, I want my financial data to be private and secure, so that no other user can access my information.
-
-#### Acceptance Criteria
-
-1. THE Backend SHALL scope every database read and write operation to the authenticated user_id.
-2. THE Backend SHALL reject any request that attempts to access an Expense_Record belonging to a different user_id with a 403 Forbidden status.
-3. THE App SHALL transmit all data over HTTPS.
-4. THE Backend SHALL validate and sanitize all user inputs before writing to Firestore.
-5. WHEN a user uploads an image for extraction, THE Backend SHALL restrict access to the uploaded file to the authenticated user only.
-
-### Requirement 13: Standardized API Responses
-
-**User Story:** As a developer, I want all API responses to follow a consistent format, so that the frontend can handle responses predictably.
+**User Story:** ในฐานะผู้ใช้งาน ฉันต้องการให้ระบบช่วยวางแผนการเงินสำหรับค่าใช้จ่ายภายในบ้านตามแนวโน้ม เพื่อจัดการเงินได้อย่างมีประสิทธิภาพ
 
 #### Acceptance Criteria
 
-1. THE Backend SHALL return all API responses in the format: `{ "data": <payload>, "error": <error_message_or_null> }`.
-2. WHEN a request is successful, THE Backend SHALL set the "error" field to null and populate the "data" field.
-3. WHEN a request fails, THE Backend SHALL set the "data" field to null and populate the "error" field with a descriptive message.
-4. THE Backend SHALL return appropriate HTTP status codes: 200 for success, 400 for validation errors, 401 for authentication errors, 403 for authorization errors, and 500 for server errors.
+1. THE Financial_Planner SHALL สร้างแผนงบประมาณรายเดือนโดยอ้างอิงจากข้อมูลค่าใช้จ่ายย้อนหลังและแนวโน้มที่ Trend_Analyzer คาดการณ์
+2. WHEN ผู้ใช้ร้องขอแผนการเงิน, THE Financial_Planner SHALL แสดงประมาณการค่าใช้จ่ายรายหมวดหมู่สำหรับ 3 เดือนข้างหน้า
+3. THE Financial_Planner SHALL แนะนำหมวดหมู่ที่ผู้ใช้สามารถลดค่าใช้จ่ายได้ โดยอ้างอิงจากการเปรียบเทียบกับค่าเฉลี่ยย้อนหลัง
+4. WHEN ผู้ใช้ตั้งเป้าหมายการออม, THE Financial_Planner SHALL คำนวณงบประมาณค่าใช้จ่ายครัวเรือนสูงสุดต่อเดือนที่สอดคล้องกับเป้าหมายการออม
+5. THE Financial_Planner SHALL อัปเดตแผนการเงินอัตโนมัติเมื่อมี Expense_Record ใหม่เข้ามาในระบบ
+
+### Requirement 8: การจัดเก็บข้อมูลบน Cloud และความปลอดภัย
+
+**User Story:** ในฐานะผู้ใช้งาน ฉันต้องการให้ข้อมูลการเงินของฉันถูกจัดเก็บอย่างปลอดภัยบน Cloud เพื่อเข้าถึงได้จากทุกอุปกรณ์และมั่นใจว่าข้อมูลจะไม่สูญหาย
+
+#### Acceptance Criteria
+
+1. THE Cloud_Database SHALL เข้ารหัสข้อมูลการเงินของผู้ใช้ทั้งขณะจัดเก็บ (at rest) และขณะส่งข้อมูล (in transit)
+2. THE BillSense_App SHALL รองรับการยืนยันตัวตนด้วย Biometric Authentication (ลายนิ้วมือหรือ Face ID) ก่อนเข้าถึงข้อมูลการเงิน
+3. WHEN ผู้ใช้ลงชื่อเข้าใช้จากอุปกรณ์ใหม่, THE BillSense_App SHALL ส่งรหัสยืนยันไปยังอีเมลหรือเบอร์โทรศัพท์ที่ลงทะเบียนไว้
+4. THE Cloud_Database SHALL สำรองข้อมูลอัตโนมัติทุก 24 ชั่วโมง
+5. WHEN ผู้ใช้ร้องขอลบบัญชี, THE BillSense_App SHALL ลบข้อมูลทั้งหมดของผู้ใช้ออกจาก Cloud_Database ภายใน 30 วัน
+
+### Requirement 9: การ Parse และแสดงผลข้อมูลบิล (Round-Trip)
+
+**User Story:** ในฐานะผู้ใช้งาน ฉันต้องการให้ข้อมูลบิลที่ถูกสกัดสามารถแสดงผลกลับเป็นรูปแบบที่อ่านได้ และข้อมูลยังคงถูกต้องครบถ้วน
+
+#### Acceptance Criteria
+
+1. WHEN Data_Extractor สกัดข้อมูลจาก Bill_Document, THE Data_Extractor SHALL แปลงข้อมูลเป็น Expense_Record ในรูปแบบ structured data (JSON)
+2. THE BillSense_App SHALL แสดงผล Expense_Record กลับเป็นรูปแบบสรุปบิลที่ผู้ใช้อ่านเข้าใจได้ (Pretty Print)
+3. FOR ALL Expense_Record ที่ถูกต้อง, การ parse จาก structured data เป็นรูปแบบแสดงผล แล้ว parse กลับเป็น structured data SHALL ให้ผลลัพธ์ที่เทียบเท่ากับข้อมูลต้นฉบับ (Round-Trip Property)
