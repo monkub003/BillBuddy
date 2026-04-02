@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: billbuddy-api
+    runtime: node
+    region: singapore
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: node dist/index.js
+    envVars:
+      - key: PORT
+        value: 8080
+      - key: FIREBASE_PROJECT_ID
+        fromGroup: billbuddy-secrets
+      - key: FIREBASE_PRIVATE_KEY
+        fromGroup: billbuddy-secrets
+      - key: FIREBASE_CLIENT_EMAIL
+        fromGroup: billbuddy-secrets
+      - key: JWT_SECRET
+        fromGroup: billbuddy-secrets
+      - key: AI_SERVICE_API_KEY
+        fromGroup: billbuddy-secrets
