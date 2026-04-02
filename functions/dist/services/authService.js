@@ -27,7 +27,7 @@ function createAuthService(deps) {
         if (!isValidEmail(email)) {
             return { data: null, error: "invalid email" };
         }
-        if (password.length < 8) {
+        if (!password || password.length < 8) {
             return { data: null, error: "password too short" };
         }
         const existing = await userStore.findBy("email", email);

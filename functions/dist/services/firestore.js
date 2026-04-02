@@ -18,6 +18,14 @@ function createInMemoryStore() {
             }
             return undefined;
         },
+        async findAllBy(field, value) {
+            const results = [];
+            for (const item of store.values()) {
+                if (item[field] === value)
+                    results.push(item);
+            }
+            return results;
+        },
         async set(id, data) {
             store.set(id, data);
         },

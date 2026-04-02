@@ -19,6 +19,7 @@ export default function LoginScreen() {
   const { login, loading, error } = useAuth();
 
   const handleLogin = async () => {
+    console.log(error)
     await login(email, password);
   };
 

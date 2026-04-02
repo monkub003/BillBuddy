@@ -4,6 +4,8 @@ exports.createUserRouter = createUserRouter;
 const express_1 = require("express");
 const authMiddleware_1 = require("../middleware/authMiddleware");
 const inputSanitizer_1 = require("../middleware/inputSanitizer");
+const accountService_1 = require("../services/accountService");
+const notificationService_1 = require("../services/notificationService");
 /**
  * Factory that creates the user router.
  * Accepts UserRoutesDeps so callers can inject a custom store
@@ -56,6 +58,57 @@ function createUserRouter(deps) {
             },
             error: null,
         });
+    });
+    // --- Notification Preferences ---
+    const notificationService = (0, notificationService_1.createNotificationService)({
+        notificationStore: deps.notificationStore,
+        notificationPreferencesStore: deps.notificationPreferencesStore,
+    });
+    // GET /users/notification-preferences — get notification preferences
+    router.get("/notification-preferences", async (req, res) => {
+        const userId = req.userId;
+        try {
+            const prefs = await notificationService.getNotificationPreferences(userId);
+            res.status(200).json({ data: prefs, error: null });
+        }
+        catch {
+            res.status(500).json({ data: null, error: "internal server error" });
+        }
+    });
+    // PUT /users/notification-preferences — update notification preferences
+    router.put("/notification-preferences", async (req, res) => {
+        const userId = req.userId;
+        const prefs = req.body;
+        if (!prefs || typeof prefs !== "object") {
+            res.status(400).json({ data: null, error: "invalid preferences" });
+            return;
+        }
+        try {
+            await notificationService.updateNotificationPreferences(userId, prefs);
+            const updated = await notificationService.getNotificationPreferences(userId);
+            res.status(200).json({ data: updated, error: null });
+        }
+        catch {
+            res.status(500).json({ data: null, error: "internal server error" });
+        }
+    });
+    // DELETE /users/account — delete authenticated user's account and all data
+    router.delete("/account", async (req, res) => {
+        const userId = req.userId;
+        const record = await userStore.get(userId);
+        if (!record) {
+            res.status(404).json({ data: null, error: "user not found" });
+            return;
+        }
+        const accountService = (0, accountService_1.createAccountService)({
+            userStore,
+            expenseStore: deps.expenseStore,
+            budgetStore: deps.budgetStore,
+            notificationStore: deps.notificationStore,
+            storageBucket: deps.storageBucket,
+        });
+        const result = await accountService.deleteAccount(userId);
+        res.status(200).json({ data: result, error: null });
     });
     return router;
 }

@@ -71,9 +71,10 @@ app.use("/scheduled", createScheduledRouter({
 app.use(errorHandlerMiddleware);
 
 const PORT = process.env.PORT || 8080;
+const HOST = process.env.HOST || "0.0.0.0";
 
-app.listen(PORT, () => {
-  console.log(`BillBuddy API running on port ${PORT}`);
+app.listen(Number(PORT), HOST, () => {
+  console.log(`BillBuddy API running on ${HOST}:${PORT}`);
 });
 
 export default app;

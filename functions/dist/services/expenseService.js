@@ -30,6 +30,7 @@ function createExpenseService(deps) {
             isPaid: data.isPaid,
             extractedVia: data.extractedVia,
             rawSourceRef: data.rawSourceRef,
+            needsReview: data.needsReview ?? false,
             createdAt: new Date().toISOString(),
         };
         await expenseStore.set(expense.id, expense);
@@ -89,6 +90,21 @@ function createExpenseService(deps) {
         await expenseStore.delete(expenseId);
         return { data: undefined, error: null };
     }
-    return { createExpense, getExpenses, updateExpense, deleteExpense, _expenseStore: expenseStore };
+    async function confirmExpense(userId, expenseId) {
+        const existing = await expenseStore.get(expenseId);
+        if (!existing) {
+            return { data: null, error: "access denied" };
+        }
+        if (existing.userId !== userId) {
+            return { data: null, error: "access denied" };
+        }
+        const updated = {
+            ...existing,
+            needsReview: false,
+        };
+        await expenseStore.set(expenseId, updated);
+        return { data: updated, error: null };
+    }
+    return { createExpense, getExpenses, updateExpense, deleteExpense, confirmExpense, _expenseStore: expenseStore };
 }
 //# sourceMappingURL=expenseService.js.map

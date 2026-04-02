@@ -20,17 +20,12 @@ const ALLOWED_CATEGORIES = [
  */
 function mapToExpense(raw, userId, source, sourceRef) {
     let needsReview = false;
-    // Check confidence scores — flag for review if any < 0.5
-    if (raw.amount.confidence < 0.5 ||
-        raw.category.confidence < 0.5 ||
-        raw.dueDate.confidence < 0.5) {
-        needsReview = true;
-    }
+    // All extraction results require user confirmation before saving (Req 1.3)
+    needsReview = true;
     // Map category — default to "manual" if unrecognized
     let category = raw.category.value;
     if (!ALLOWED_CATEGORIES.includes(category)) {
         category = "manual";
-        needsReview = true;
     }
     return {
         id: (0, uuid_1.v4)(),

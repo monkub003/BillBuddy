@@ -21,7 +21,7 @@ export function createAIClient(apiKey?: string): AIClient {
     throw new Error("AI_SERVICE_API_KEY is not configured");
   }
 
-  async function extractFromImage(imageUrl: string): Promise<ExtractionResult> {
+  async function extractFromImage(_imageUrl: string): Promise<ExtractionResult> {
     // MVP placeholder: In production, this would call the AI service API
     // e.g., OpenAI Vision, Google Cloud Vision, etc.
     // For now, throw to indicate no real AI service is connected.
@@ -29,7 +29,7 @@ export function createAIClient(apiKey?: string): AIClient {
     throw new Error("AI service not configured for image extraction");
   }
 
-  async function extractFromText(text: string, attachments?: string[]): Promise<ExtractionResult> {
+  async function extractFromText(_text: string, _attachments?: string[]): Promise<ExtractionResult> {
     // MVP placeholder: In production, this would call the AI service API
     // e.g., OpenAI GPT for text parsing.
     throw new Error("AI service not configured for text extraction");

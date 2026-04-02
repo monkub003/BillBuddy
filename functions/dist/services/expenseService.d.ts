@@ -9,6 +9,7 @@ export declare function createExpenseService(deps?: Partial<ExpenseServiceDeps>)
     getExpenses: (userId: string, filters?: ExpenseFilters) => Promise<ApiResponse<Expense[]>>;
     updateExpense: (userId: string, expenseId: string, data: Partial<Expense>) => Promise<ApiResponse<Expense>>;
     deleteExpense: (userId: string, expenseId: string) => Promise<ApiResponse<void>>;
+    confirmExpense: (userId: string, expenseId: string) => Promise<ApiResponse<Expense>>;
     _expenseStore: FirestoreStore<Expense>;
 };
 //# sourceMappingURL=expenseService.d.ts.map
