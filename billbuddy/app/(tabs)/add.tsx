@@ -84,7 +84,7 @@ function DatePickerModal({ visible, value, onConfirm, onCancel }: DatePickerModa
   const [year, setYear] = useState(value.getFullYear());
 
   const currentYear = new Date().getFullYear();
-  const years = Array.from({ length: 6 }, (_, i) => currentYear - 5 + i);
+  const years = Array.from({ length: 6 }, (_, i) => currentYear - 2 + i);
   const months = Array.from({ length: 12 }, (_, i) => i + 1);
   const maxDay = daysInMonth(month, year);
   const days = Array.from({ length: maxDay }, (_, i) => i + 1);
@@ -327,7 +327,7 @@ export default function AddScreen() {
             setDescription("");
             setSelectedDate(new Date());
             setSelectedCategory(0);
-            router.navigate("/(tabs)");
+            router.navigate("/(tabs)/expenses");
           },
         },
       ]);

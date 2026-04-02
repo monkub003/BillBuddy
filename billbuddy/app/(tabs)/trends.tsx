@@ -7,6 +7,7 @@ import {
   RefreshControl,
   StyleSheet,
 } from "react-native";
+import Svg, { Line, Circle as SvgCircle, Rect } from "react-native-svg";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
 import { Theme } from "@/constants/theme";
@@ -31,7 +32,7 @@ const INSIGHT_BAR_COLORS: Record<AiInsight["type"], string> = {
   suggestion: Theme.accent.green,
 };
 
-// ─── Mini Line Chart (pure RN, no library) ──────────────────
+// ─── SVG Line Chart ─────────────────────────────────────────
 
 interface MiniLineChartProps {
   data: MonthlyTotal[];
@@ -41,10 +42,10 @@ interface MiniLineChartProps {
 
 function MiniLineChart({ data, selectedIndex, onSelect }: MiniLineChartProps) {
   const CHART_W = 300;
-  const CHART_H = 120;
-  const PADDING_X = 10;
-  const PADDING_TOP = 20;
-  const PADDING_BOTTOM = 4;
+  const CHART_H = 130;
+  const PADDING_X = 20;
+  const PADDING_TOP = 24;
+  const PADDING_BOTTOM = 10;
 
   const amounts = data.map((d) => d.amount);
   const maxVal = Math.max(...amounts, 1);
@@ -56,19 +57,23 @@ function MiniLineChart({ data, selectedIndex, onSelect }: MiniLineChartProps) {
     y: PADDING_TOP + (1 - (d.amount - minVal) / range) * (CHART_H - PADDING_TOP - PADDING_BOTTOM),
   }));
 
-  // Find the split index between historical and forecast
   const forecastStart = data.findIndex((d) => d.isForecast);
 
   return (
     <View style={chartStyles.container}>
-      <View style={{ width: CHART_W, height: CHART_H }}>
+      <Svg width={CHART_W} height={CHART_H}>
         {/* Grid lines */}
         {[0, 0.5, 1].map((frac) => {
           const y = PADDING_TOP + frac * (CHART_H - PADDING_TOP - PADDING_BOTTOM);
           return (
-            <View
-              key={frac}
-              style={[chartStyles.gridLine, { top: y }]}
+            <Line
+              key={`grid-${frac}`}
+              x1={PADDING_X}
+              y1={y}
+              x2={CHART_W - PADDING_X}
+              y2={y}
+              stroke="rgba(255,255,255,0.08)"
+              strokeWidth={1}
             />
           );
         })}
@@ -77,67 +82,65 @@ function MiniLineChart({ data, selectedIndex, onSelect }: MiniLineChartProps) {
         {points.map((pt, i) => {
           if (i === 0) return null;
           const prev = points[i - 1];
-          const dx = pt.x - prev.x;
-          const dy = pt.y - prev.y;
-          const length = Math.sqrt(dx * dx + dy * dy);
-          const angle = Math.atan2(dy, dx) * (180 / Math.PI);
-          const isForecastSegment = i >= forecastStart && forecastStart > 0;
-
+          const isForecast = i >= forecastStart && forecastStart > 0;
           return (
-            <View
+            <Line
               key={`line-${i}`}
-              style={[
-                chartStyles.lineSegment,
-                {
-                  left: prev.x,
-                  top: prev.y,
-                  width: length,
-                  transform: [{ rotate: `${angle}deg` }],
-                  borderStyle: isForecastSegment ? "dashed" : "solid",
-                  opacity: isForecastSegment ? 0.6 : 1,
-                },
-              ]}
+              x1={prev.x}
+              y1={prev.y}
+              x2={pt.x}
+              y2={pt.y}
+              stroke={Theme.accent.green}
+              strokeWidth={2.5}
+              strokeDasharray={isForecast ? "6,4" : undefined}
+              opacity={isForecast ? 0.6 : 1}
             />
           );
         })}
 
         {/* Dots */}
         {points.map((pt, i) => (
-          <View
+          <SvgCircle
             key={`dot-${i}`}
-            style={[
-              chartStyles.dot,
-              {
-                left: pt.x - 4,
-                top: pt.y - 4,
-                backgroundColor: data[i].isForecast
-                  ? "rgba(15,157,88,0.4)"
-                  : Theme.accent.green,
-              },
-            ]}
+            cx={pt.x}
+            cy={pt.y}
+            r={4}
+            fill={data[i].isForecast ? "rgba(15,157,88,0.4)" : Theme.accent.green}
           />
         ))}
 
-        {/* Tooltip */}
-        {selectedIndex != null && points[selectedIndex] && (
-          <View
-            style={[
-              chartStyles.tooltip,
-              {
-                left: Math.min(points[selectedIndex].x - 40, CHART_W - 100),
-                top: Math.max(points[selectedIndex].y - 50, 0),
-              },
-            ]}
-          >
-            <Text style={chartStyles.tooltipMonth}>
-              {data[selectedIndex].month}
-            </Text>
-            <Text style={chartStyles.tooltipAmount}>
-              : {formatCurrency(data[selectedIndex].amount)}
-            </Text>
-          </View>
-        )}
-      </View>
+        {/* Tap targets (invisible larger circles) */}
+        {points.map((pt, i) => (
+          <SvgCircle
+            key={`tap-${i}`}
+            cx={pt.x}
+            cy={pt.y}
+            r={14}
+            fill="transparent"
+            onPress={() => onSelect(selectedIndex === i ? null : i)}
+          />
+        ))}
+      </Svg>
+
+      {/* Tooltip overlay */}
+      {selectedIndex != null && points[selectedIndex] && (
+        <View
+          style={[
+            chartStyles.tooltip,
+            {
+              left: Math.min(Math.max(points[selectedIndex].x - 40, 0), CHART_W - 110),
+              top: Math.max(points[selectedIndex].y - 50, 0),
+            },
+          ]}
+        >
+          <Text style={chartStyles.tooltipMonth}>
+            {data[selectedIndex].month}
+          </Text>
+          <Text style={chartStyles.tooltipAmount}>
+            : {formatCurrency(data[selectedIndex].amount)}
+          </Text>
+        </View>
+      )}
 
       {/* X-axis labels */}
       <View style={chartStyles.xLabels}>
@@ -162,26 +165,6 @@ const chartStyles = StyleSheet.create({
   container: {
     alignItems: "center",
     paddingVertical: 8,
-  },
-  gridLine: {
-    position: "absolute",
-    left: 10,
-    right: 10,
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: "rgba(255,255,255,0.08)",
-  },
-  lineSegment: {
-    position: "absolute",
-    height: 0,
-    borderTopWidth: 2.5,
-    borderTopColor: Theme.accent.green,
-    transformOrigin: "left center",
-  },
-  dot: {
-    position: "absolute",
-    width: 8,
-    height: 8,
-    borderRadius: 4,
   },
   tooltip: {
     position: "absolute",
@@ -211,8 +194,8 @@ const chartStyles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     width: 300,
-    paddingHorizontal: 10,
-    marginTop: 8,
+    paddingHorizontal: 20,
+    marginTop: 4,
   },
   xLabel: {
     fontSize: 11,

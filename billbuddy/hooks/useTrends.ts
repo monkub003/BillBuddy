@@ -4,7 +4,7 @@ import { PredictionResult } from "@/types";
 import { useExpenseStore } from "@/store/expenseStore";
 
 export interface MonthlyTotal {
-  month: string; // short Thai label e.g. "พ.ย."
+  month: string;
   amount: number;
   isForecast: boolean;
 }
@@ -22,14 +22,10 @@ const SHORT_THAI_MONTHS = [
   "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค.",
 ];
 
-/**
- * Builds a 6-month historical + 3-month forecast trend from expenses
- * and prediction results. Falls back to local computation when the
- * backend doesn't expose a dedicated trends endpoint yet.
- */
 export function useTrends() {
   const expenses = useExpenseStore((s) => s.expenses);
   const [predictions, setPredictions] = useState<PredictionResult[]>([]);
+  const [insights, setInsights] = useState<AiInsight[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -37,11 +33,22 @@ export function useTrends() {
     setLoading(true);
     setError(null);
     try {
-      const data = await apiClient<{
-        predictions?: PredictionResult[];
-        insufficientData?: boolean;
-      }>("/predictions");
-      setPredictions(data.predictions ?? []);
+      // Fetch predictions and AI insights in parallel
+      const [predData, insightData] = await Promise.allSettled([
+        apiClient<{
+          predictions?: PredictionResult[];
+          insufficientData?: boolean;
+        }>("/predictions"),
+        apiClient<AiInsight[]>("/insights"),
+      ]);
+
+      if (predData.status === "fulfilled") {
+        setPredictions(predData.value.predictions ?? []);
+      }
+
+      if (insightData.status === "fulfilled") {
+        setInsights(insightData.value);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load trends");
     } finally {
@@ -83,75 +90,6 @@ export function useTrends() {
       amount: Math.round(avgPrediction * (1 + i * 0.03)),
       isForecast: true,
     });
-  }
-
-  // Derive AI insights from predictions
-  const insights: AiInsight[] = [];
-
-  const elecPred = predictions.find((p) => p.category === "electricity");
-  if (elecPred) {
-    insights.push({
-      id: "elec-warning",
-      type: "warning",
-      title: `ค่าไฟอาจเพิ่มขึ้น ${Math.round((elecPred.confidence) * 30)}%`,
-      description: "จากแนวโน้มอุณหภูมิที่สูงขึ้นในช่วง เม.ย.-มิ.ย.",
-      confidence: Math.round(elecPred.confidence * 100),
-    });
-  }
-
-  const foodCategories = ["manual", "gas"] as const;
-  const foodPreds = predictions.filter((p) =>
-    (foodCategories as readonly string[]).includes(p.category)
-  );
-  if (foodPreds.length > 0) {
-    const avgConf = foodPreds.reduce((s, p) => s + p.confidence, 0) / foodPreds.length;
-    insights.push({
-      id: "food-trend",
-      type: "info",
-      title: "ค่าอาหารเพิ่มขึ้นต่อเนื่อง",
-      description: "เพิ่มขึ้น 12% จากค่าเฉลี่ย 3 เดือนล่าสุด",
-      confidence: Math.round(avgConf * 100),
-    });
-  }
-
-  if (predictions.length > 0) {
-    const maxPred = predictions.reduce((a, b) =>
-      b.confidence > a.confidence ? b : a
-    );
-    insights.push({
-      id: "suggestion",
-      type: "suggestion",
-      title: "แนะนำ: ลดค่าบันเทิง",
-      description: "หมวดนี้สูงกว่าเกณฑ์ที่ตั้งไว้ 15%",
-      confidence: Math.round(maxPred.confidence * 100),
-    });
-  }
-
-  // Fallback insights when no predictions available
-  if (insights.length === 0) {
-    insights.push(
-      {
-        id: "elec-default",
-        type: "warning",
-        title: "ค่าไฟอาจเพิ่มขึ้น 25%",
-        description: "จากแนวโน้มอุณหภูมิที่สูงขึ้นในช่วง เม.ย.-มิ.ย.",
-        confidence: 78,
-      },
-      {
-        id: "food-default",
-        type: "info",
-        title: "ค่าอาหารเพิ่มขึ้นต่อเนื่อง",
-        description: "เพิ่มขึ้น 12% จากค่าเฉลี่ย 3 เดือนล่าสุด",
-        confidence: 85,
-      },
-      {
-        id: "suggest-default",
-        type: "suggestion",
-        title: "แนะนำ: ลดค่าบันเทิง",
-        description: "หมวดนี้สูงกว่าเกณฑ์ที่ตั้งไว้ 15%",
-        confidence: 92,
-      }
-    );
   }
 
   return { monthlyTotals, insights, predictions, loading, error, fetchTrends };

@@ -9,6 +9,7 @@ import { createDashboardRouter } from "./routes/dashboardRoutes";
 import { createBudgetRouter } from "./routes/budgetRoutes";
 import { createFinancialRouter } from "./routes/financialRoutes";
 import { createScheduledRouter } from "./routes/scheduledRoutes";
+import { createInsightRouter } from "./routes/insightRoutes";
 import { errorHandlerMiddleware } from "./middleware/responseHelper";
 import { initFirebase, createFirestoreStore } from "./services/firestore";
 import { UserRecord } from "./services/authService";
@@ -66,6 +67,7 @@ app.use("/users", createUserRouter({ userStore, expenseStore, budgetStore, notif
 app.use("/dashboard", createDashboardRouter({ expenseStore, userStore: userStoreAsUser as any }));
 app.use("/budgets", createBudgetRouter({ expenseStore, userStore: userStoreAsUser as any, budgetStore }));
 app.use("/financial", createFinancialRouter({ expenseStore, userStore: userStoreAsUser as any, budgetStore }));
+app.use("/insights", createInsightRouter({ expenseStore }));
 
 // System-level scheduled endpoints (no user auth, protected by API key)
 app.use("/scheduled", createScheduledRouter({

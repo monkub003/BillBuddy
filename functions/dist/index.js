@@ -14,6 +14,7 @@ const dashboardRoutes_1 = require("./routes/dashboardRoutes");
 const budgetRoutes_1 = require("./routes/budgetRoutes");
 const financialRoutes_1 = require("./routes/financialRoutes");
 const scheduledRoutes_1 = require("./routes/scheduledRoutes");
+const insightRoutes_1 = require("./routes/insightRoutes");
 const responseHelper_1 = require("./middleware/responseHelper");
 const firestore_1 = require("./services/firestore");
 dotenv_1.default.config();
@@ -56,6 +57,7 @@ app.use("/users", (0, userRoutes_1.createUserRouter)({ userStore, expenseStore, 
 app.use("/dashboard", (0, dashboardRoutes_1.createDashboardRouter)({ expenseStore, userStore: userStoreAsUser }));
 app.use("/budgets", (0, budgetRoutes_1.createBudgetRouter)({ expenseStore, userStore: userStoreAsUser, budgetStore }));
 app.use("/financial", (0, financialRoutes_1.createFinancialRouter)({ expenseStore, userStore: userStoreAsUser, budgetStore }));
+app.use("/insights", (0, insightRoutes_1.createInsightRouter)({ expenseStore }));
 // System-level scheduled endpoints (no user auth, protected by API key)
 app.use("/scheduled", (0, scheduledRoutes_1.createScheduledRouter)({
     userStore: userStoreAsUser,
