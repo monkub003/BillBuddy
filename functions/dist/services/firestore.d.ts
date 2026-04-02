@@ -1,7 +1,8 @@
 /**
  * Firestore abstraction layer.
- * Uses an in-memory Map for now — swap for real Firestore later.
+ * Provides both an in-memory store (for tests) and a real Firestore store.
  */
+import * as admin from "firebase-admin";
 export interface FirestoreStore<T> {
     get(id: string): Promise<T | undefined>;
     findBy(field: keyof T, value: unknown): Promise<T | undefined>;
@@ -10,5 +11,7 @@ export interface FirestoreStore<T> {
     delete(id: string): Promise<boolean>;
     getAll(): Promise<T[]>;
 }
+export declare function initFirebase(): admin.firestore.Firestore;
+export declare function createFirestoreStore<T>(collectionName: string, db: admin.firestore.Firestore): FirestoreStore<T>;
 export declare function createInMemoryStore<T>(): FirestoreStore<T>;
 //# sourceMappingURL=firestore.d.ts.map

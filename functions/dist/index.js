@@ -17,13 +17,16 @@ const scheduledRoutes_1 = require("./routes/scheduledRoutes");
 const responseHelper_1 = require("./middleware/responseHelper");
 const firestore_1 = require("./services/firestore");
 dotenv_1.default.config();
-// Shared stores so routes operate on the same data
-const userStore = (0, firestore_1.createInMemoryStore)();
-const expenseStore = (0, firestore_1.createInMemoryStore)();
-const budgetStore = (0, firestore_1.createInMemoryStore)();
-const notificationStore = (0, firestore_1.createInMemoryStore)();
-const notificationPreferencesStore = (0, firestore_1.createInMemoryStore)();
-const correctionsStore = (0, firestore_1.createInMemoryStore)();
+// Initialize Firebase Admin SDK (auto-connects to emulator when
+// FIRESTORE_EMULATOR_HOST is set)
+const db = (0, firestore_1.initFirebase)();
+// Shared stores backed by real Firestore collections
+const userStore = (0, firestore_1.createFirestoreStore)("users", db);
+const expenseStore = (0, firestore_1.createFirestoreStore)("expenses", db);
+const budgetStore = (0, firestore_1.createFirestoreStore)("budgets", db);
+const notificationStore = (0, firestore_1.createFirestoreStore)("notifications", db);
+const notificationPreferencesStore = (0, firestore_1.createFirestoreStore)("notificationPreferences", db);
+const correctionsStore = (0, firestore_1.createFirestoreStore)("corrections", db);
 // Cast userStore for routes that expect FirestoreStore<User>.
 // UserRecord is a superset of User so this is structurally compatible at runtime.
 const userStoreAsUser = userStore;

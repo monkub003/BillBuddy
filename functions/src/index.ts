@@ -10,7 +10,7 @@ import { createBudgetRouter } from "./routes/budgetRoutes";
 import { createFinancialRouter } from "./routes/financialRoutes";
 import { createScheduledRouter } from "./routes/scheduledRoutes";
 import { errorHandlerMiddleware } from "./middleware/responseHelper";
-import { createInMemoryStore } from "./services/firestore";
+import { initFirebase, createFirestoreStore } from "./services/firestore";
 import { UserRecord } from "./services/authService";
 import { Expense } from "./types/expense";
 import { Budget } from "./types/budget";
@@ -20,13 +20,17 @@ import { UserCorrection } from "./services/categorizationService";
 
 dotenv.config();
 
-// Shared stores so routes operate on the same data
-const userStore = createInMemoryStore<UserRecord>();
-const expenseStore = createInMemoryStore<Expense>();
-const budgetStore = createInMemoryStore<Budget>();
-const notificationStore = createInMemoryStore<Notification>();
-const notificationPreferencesStore = createInMemoryStore<StoredNotificationPreferences>();
-const correctionsStore = createInMemoryStore<UserCorrection>();
+// Initialize Firebase Admin SDK (auto-connects to emulator when
+// FIRESTORE_EMULATOR_HOST is set)
+const db = initFirebase();
+
+// Shared stores backed by real Firestore collections
+const userStore = createFirestoreStore<UserRecord>("users", db);
+const expenseStore = createFirestoreStore<Expense>("expenses", db);
+const budgetStore = createFirestoreStore<Budget>("budgets", db);
+const notificationStore = createFirestoreStore<Notification>("notifications", db);
+const notificationPreferencesStore = createFirestoreStore<StoredNotificationPreferences>("notificationPreferences", db);
+const correctionsStore = createFirestoreStore<UserCorrection>("corrections", db);
 
 // Cast userStore for routes that expect FirestoreStore<User>.
 // UserRecord is a superset of User so this is structurally compatible at runtime.

@@ -38,6 +38,7 @@ services:
       - PORT=8080
       - FIREBASE_PROJECT_ID=billbuddy-dev
       - JWT_SECRET=billbuddy-dev-secret-change-in-production
+      - FIRESTORE_EMULATOR_HOST=firebase-emulators:8081
     command: >
       bash -c "
         npm install &&
