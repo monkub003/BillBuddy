@@ -145,13 +145,9 @@ export default function ExpensesScreen() {
   const { expenses, loading, error, fetchExpenses } = useExpenses();
   const [activeFilter, setActiveFilter] = useState<FilterKey>("all");
 
-  const now = new Date();
-  const currentMonth = now.getMonth() + 1;
-  const currentYear = now.getFullYear();
-
   const loadData = useCallback(() => {
-    fetchExpenses({ month: currentMonth, year: currentYear });
-  }, [fetchExpenses, currentMonth, currentYear]);
+    fetchExpenses({});
+  }, [fetchExpenses]);
 
   useFocusEffect(
     useCallback(() => {
