@@ -5,10 +5,11 @@ import {
   ScrollView,
   ActivityIndicator,
   RefreshControl,
+  TouchableOpacity,
   StyleSheet,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, router } from "expo-router";
 import { useExpenses } from "@/hooks/useExpenses";
 import { useIncomeStore } from "@/store/incomeStore";
 import { useDashboard } from "@/hooks/useDashboard";
@@ -38,6 +39,7 @@ function formatCurrency(amount: number): string {
 export default function DashboardScreen() {
   const { expenses, loading, error, fetchExpenses } = useExpenses();
   const monthlyIncome = useIncomeStore((s) => s.monthlyIncome);
+  const fetchIncome = useIncomeStore((s) => s.fetchIncome);
   const { predictions, fetchPredictions } = usePrediction();
 
   const now = new Date();
@@ -50,7 +52,8 @@ export default function DashboardScreen() {
   const loadData = useCallback(() => {
     fetchExpenses({ month: currentMonth, year: currentYear });
     fetchPredictions();
-  }, [fetchExpenses, fetchPredictions, currentMonth, currentYear]);
+    fetchIncome();
+  }, [fetchExpenses, fetchPredictions, fetchIncome, currentMonth, currentYear]);
 
   useFocusEffect(
     useCallback(() => {
@@ -121,10 +124,14 @@ export default function DashboardScreen() {
               ? formatCurrency(remainingBudget)
               : "—"}
           </Text>
-          {monthlyIncome != null && (
+          {monthlyIncome != null ? (
             <Text style={styles.budgetSubtitle}>
               จาก {formatCurrency(monthlyIncome)}
             </Text>
+          ) : (
+            <TouchableOpacity onPress={() => router.push("/(tabs)/settings")}>
+              <Text style={styles.setupIncomeLink}>ตั้งค่ารายได้</Text>
+            </TouchableOpacity>
           )}
         </View>
       </View>
@@ -224,6 +231,12 @@ const styles = StyleSheet.create({
   budgetSubtitle: {
     fontSize: 12,
     color: Theme.text.secondary,
+    marginTop: 4,
+  },
+  setupIncomeLink: {
+    fontSize: 12,
+    color: Theme.accent.green,
+    fontWeight: "600",
     marginTop: 4,
   },
 

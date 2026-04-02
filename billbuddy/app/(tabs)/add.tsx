@@ -6,6 +6,8 @@ import {
   TouchableOpacity,
   ScrollView,
   Alert,
+  Modal,
+  FlatList,
   StyleSheet,
   Platform,
 } from "react-native";
@@ -45,21 +47,234 @@ const INPUT_MODES: { value: InputMode; label: string; icon: string }[] = [
 
 // ─── Helpers ────────────────────────────────────────────────
 
-function todayFormatted(): string {
-  const d = new Date();
+const THAI_MONTHS = [
+  "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
+  "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม",
+];
+
+function daysInMonth(month: number, year: number): number {
+  return new Date(year, month, 0).getDate();
+}
+
+function formatDisplayDate(d: Date): string {
   const dd = String(d.getDate()).padStart(2, "0");
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const yyyy = d.getFullYear();
   return `${dd} / ${mm} / ${yyyy}`;
 }
 
-function parseDisplayDate(display: string): string {
-  const parts = display.replace(/\s/g, "").split("/");
-  if (parts.length === 3) {
-    return `${parts[2]}-${parts[1]}-${parts[0]}`;
-  }
-  return new Date().toISOString().slice(0, 10);
+function toISODate(d: Date): string {
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  return `${d.getFullYear()}-${mm}-${dd}`;
 }
+
+// ─── Date Picker Modal ─────────────────────────────────────
+
+interface DatePickerModalProps {
+  visible: boolean;
+  value: Date;
+  onConfirm: (date: Date) => void;
+  onCancel: () => void;
+}
+
+function DatePickerModal({ visible, value, onConfirm, onCancel }: DatePickerModalProps) {
+  const [day, setDay] = useState(value.getDate());
+  const [month, setMonth] = useState(value.getMonth() + 1);
+  const [year, setYear] = useState(value.getFullYear());
+
+  const currentYear = new Date().getFullYear();
+  const years = Array.from({ length: 6 }, (_, i) => currentYear - 5 + i);
+  const months = Array.from({ length: 12 }, (_, i) => i + 1);
+  const maxDay = daysInMonth(month, year);
+  const days = Array.from({ length: maxDay }, (_, i) => i + 1);
+
+  // Clamp day if month/year changed
+  const safeDay = day > maxDay ? maxDay : day;
+
+  const handleConfirm = () => {
+    onConfirm(new Date(year, month - 1, safeDay));
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="slide">
+      <View style={pickerStyles.overlay}>
+        <View style={pickerStyles.sheet}>
+          <View style={pickerStyles.header}>
+            <TouchableOpacity onPress={onCancel}>
+              <Text style={pickerStyles.cancelText}>ยกเลิก</Text>
+            </TouchableOpacity>
+            <Text style={pickerStyles.title}>เลือกวันที่</Text>
+            <TouchableOpacity onPress={handleConfirm}>
+              <Text style={pickerStyles.confirmText}>ตกลง</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={pickerStyles.columns}>
+            {/* Day */}
+            <View style={pickerStyles.column}>
+              <Text style={pickerStyles.columnLabel}>วัน</Text>
+              <FlatList
+                data={days}
+                keyExtractor={(item) => `d-${item}`}
+                showsVerticalScrollIndicator={false}
+                style={pickerStyles.list}
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    style={[
+                      pickerStyles.cell,
+                      item === safeDay && pickerStyles.cellActive,
+                    ]}
+                    onPress={() => setDay(item)}
+                  >
+                    <Text
+                      style={[
+                        pickerStyles.cellText,
+                        item === safeDay && pickerStyles.cellTextActive,
+                      ]}
+                    >
+                      {item}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              />
+            </View>
+
+            {/* Month */}
+            <View style={[pickerStyles.column, { flex: 1.5 }]}>
+              <Text style={pickerStyles.columnLabel}>เดือน</Text>
+              <FlatList
+                data={months}
+                keyExtractor={(item) => `m-${item}`}
+                showsVerticalScrollIndicator={false}
+                style={pickerStyles.list}
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    style={[
+                      pickerStyles.cell,
+                      item === month && pickerStyles.cellActive,
+                    ]}
+                    onPress={() => setMonth(item)}
+                  >
+                    <Text
+                      style={[
+                        pickerStyles.cellText,
+                        item === month && pickerStyles.cellTextActive,
+                      ]}
+                    >
+                      {THAI_MONTHS[item - 1]}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              />
+            </View>
+
+            {/* Year */}
+            <View style={pickerStyles.column}>
+              <Text style={pickerStyles.columnLabel}>ปี</Text>
+              <FlatList
+                data={years}
+                keyExtractor={(item) => `y-${item}`}
+                showsVerticalScrollIndicator={false}
+                style={pickerStyles.list}
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    style={[
+                      pickerStyles.cell,
+                      item === year && pickerStyles.cellActive,
+                    ]}
+                    onPress={() => setYear(item)}
+                  >
+                    <Text
+                      style={[
+                        pickerStyles.cellText,
+                        item === year && pickerStyles.cellTextActive,
+                      ]}
+                    >
+                      {item}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              />
+            </View>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const pickerStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    justifyContent: "flex-end",
+    backgroundColor: "rgba(0,0,0,0.5)",
+  },
+  sheet: {
+    backgroundColor: Theme.background.card,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingBottom: Platform.OS === "ios" ? 34 : 16,
+  },
+  header: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: 16,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "rgba(255,255,255,0.08)",
+  },
+  title: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: Theme.text.primary,
+  },
+  cancelText: {
+    fontSize: 15,
+    color: Theme.text.secondary,
+  },
+  confirmText: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: Theme.accent.green,
+  },
+  columns: {
+    flexDirection: "row",
+    paddingHorizontal: 12,
+    paddingTop: 8,
+  },
+  column: {
+    flex: 1,
+    alignItems: "center",
+  },
+  columnLabel: {
+    fontSize: 12,
+    color: Theme.text.muted,
+    marginBottom: 8,
+    fontWeight: "600",
+  },
+  list: {
+    maxHeight: 220,
+  },
+  cell: {
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    marginVertical: 2,
+    alignItems: "center",
+  },
+  cellActive: {
+    backgroundColor: Theme.accent.green + "22",
+  },
+  cellText: {
+    fontSize: 15,
+    color: Theme.text.secondary,
+  },
+  cellTextActive: {
+    color: Theme.accent.green,
+    fontWeight: "700",
+  },
+});
 
 // ─── Main Screen ────────────────────────────────────────────
 
@@ -71,7 +286,8 @@ export default function AddScreen() {
   const [mode, setMode] = useState<InputMode>("manual");
   const [amount, setAmount] = useState("0.00");
   const [description, setDescription] = useState("");
-  const [dateDisplay, setDateDisplay] = useState(todayFormatted());
+  const [selectedDate, setSelectedDate] = useState(new Date());
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState(0);
   const [validationError, setValidationError] = useState<string | null>(null);
 
@@ -97,7 +313,7 @@ export default function AddScreen() {
     const result = await createExpense({
       category: cat.value,
       amount: numAmount,
-      dueDate: parseDisplayDate(dateDisplay),
+      dueDate: toISODate(selectedDate),
       isPaid: false,
       extractedVia: "manual",
     });
@@ -109,7 +325,7 @@ export default function AddScreen() {
           onPress: () => {
             setAmount("0.00");
             setDescription("");
-            setDateDisplay(todayFormatted());
+            setSelectedDate(new Date());
             setSelectedCategory(0);
             router.navigate("/(tabs)");
           },
@@ -185,17 +401,26 @@ export default function AddScreen() {
 
           {/* Date */}
           <Text style={styles.fieldLabel}>วันที่</Text>
-          <View style={styles.inputRow}>
-            <TextInput
-              style={[styles.textInput, { flex: 1 }]}
-              value={dateDisplay}
-              onChangeText={setDateDisplay}
-              placeholderTextColor={Theme.text.muted}
-              placeholder="DD / MM / YYYY"
-              accessibilityLabel="วันที่"
-            />
+          <TouchableOpacity
+            style={styles.inputRow}
+            onPress={() => setShowDatePicker(true)}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="เลือกวันที่"
+          >
+            <Text style={styles.dateText}>{formatDisplayDate(selectedDate)}</Text>
             <Text style={styles.calendarIcon}>📅</Text>
-          </View>
+          </TouchableOpacity>
+
+          <DatePickerModal
+            visible={showDatePicker}
+            value={selectedDate}
+            onConfirm={(date) => {
+              setSelectedDate(date);
+              setShowDatePicker(false);
+            }}
+            onCancel={() => setShowDatePicker(false)}
+          />
 
           {/* Category grid */}
           <Text style={styles.fieldLabel}>หมวดหมู่</Text>
@@ -356,6 +581,12 @@ const styles = StyleSheet.create({
   calendarIcon: {
     fontSize: 18,
     marginLeft: 8,
+  },
+  dateText: {
+    flex: 1,
+    fontSize: 15,
+    color: Theme.text.primary,
+    paddingVertical: Platform.OS === "ios" ? 16 : 12,
   },
 
   // Category grid
