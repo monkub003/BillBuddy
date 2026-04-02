@@ -5,10 +5,20 @@ import { useAuthStore } from "@/store/authStore";
 
 export default function RootLayout() {
   const token = useAuthStore((s) => s.token);
+  const loading = useAuthStore((s) => s.loading);
+  const loadToken = useAuthStore((s) => s.loadToken);
   const segments = useSegments();
   const router = useRouter();
 
+  // Hydrate persisted JWT token on app start
   useEffect(() => {
+    loadToken();
+  }, []);
+
+  useEffect(() => {
+    // Wait for token hydration before redirecting
+    if (loading) return;
+
     const inAuthGroup = segments[0] === "(auth)";
 
     if (!token && !inAuthGroup) {
@@ -16,7 +26,7 @@ export default function RootLayout() {
     } else if (token && inAuthGroup) {
       router.replace("/(tabs)");
     }
-  }, [token, segments]);
+  }, [token, segments, loading]);
 
   return (
     <Stack>

@@ -1,6 +1,6 @@
 import { ApiResponse, ExpenseCategory } from "../types/api";
 import { Expense } from "../types/expense";
-import { PredictionResult, PredictionContext } from "../types/prediction";
+import { PredictionResult, PredictionContext, TrendResult, RecurringExpense } from "../types/prediction";
 import { FirestoreStore, createInMemoryStore } from "./firestore";
 
 // ---------------------------------------------------------------------------
@@ -144,6 +144,16 @@ export function createPredictionEngine(deps?: Partial<PredictionEngineDeps>) {
       excludedFactors.push("exchangeRate");
     }
 
+    // Compute base confidence from historical data volume
+    const dataPointCount = userExpenses.length;
+    // More data → higher confidence, capped at 1.0 (24+ expenses = full data confidence)
+    const dataConfidence = Math.min(1.0, dataPointCount / 24);
+
+    // Boost confidence when external factors are available (up to +0.3)
+    const totalExternalFactors = 3; // weather, economic, exchangeRate
+    const availableFactors = totalExternalFactors - excludedFactors.length;
+    const factorBoost = (availableFactors / totalExternalFactors) * 0.3;
+
     // Build predictions per category
     const predictions: PredictionResult[] = [];
 
@@ -160,10 +170,14 @@ export function createPredictionEngine(deps?: Partial<PredictionEngineDeps>) {
         excludedFactors
       );
 
+      // Confidence = 70% data quality + 30% external factor availability, clamped to [0, 1]
+      const confidence = Math.min(1.0, Math.max(0.0, dataConfidence * 0.7 + factorBoost));
+
       predictions.push({
         category,
         predictedMin: Math.max(0, roundTwo(min)),
         predictedMax: Math.max(0, roundTwo(max)),
+        confidence: roundTwo(confidence),
         factors,
       });
     }
@@ -171,7 +185,148 @@ export function createPredictionEngine(deps?: Partial<PredictionEngineDeps>) {
     return { data: predictions, error: null };
   }
 
-  return { generatePredictions, hasEnoughData };
+  /**
+   * Analyze spending trend for a specific category over N months.
+   * Requires at least 3 months of data (Req 4.1).
+   * Detects >20% spikes vs 3-month rolling average (Req 4.4).
+   */
+  async function analyzeTrend(
+    userId: string,
+    category: ExpenseCategory,
+    months: number
+  ): Promise<ApiResponse<TrendResult>> {
+    const all = await expenseStore.getAll();
+    const userExpenses = all.filter(
+      (e) => e.userId === userId && e.category === category
+    );
+
+    // Group expenses by month (YYYY-MM)
+    const monthlyTotals = new Map<string, number>();
+    for (const e of userExpenses) {
+      const d = new Date(e.dueDate);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      monthlyTotals.set(key, (monthlyTotals.get(key) ?? 0) + e.amount);
+    }
+
+    // Sort months chronologically and take the last N
+    const sortedMonths = Array.from(monthlyTotals.keys()).sort();
+    const relevantMonths = sortedMonths.slice(-months);
+
+    // Minimum 3-month data requirement (Req 4.1)
+    if (relevantMonths.length < 3) {
+      return {
+        data: null,
+        error: "insufficient data: need at least 3 months of expense history for trend analysis",
+      };
+    }
+
+    const dataPoints = relevantMonths.map((m) => ({
+      month: m,
+      amount: monthlyTotals.get(m)!,
+    }));
+
+    // Calculate 3-month rolling average (using the 3 months before the latest)
+    const latestAmount = dataPoints[dataPoints.length - 1].amount;
+    const rollingWindow = dataPoints.slice(-4, -1); // 3 months before the latest
+    const rollingAvg =
+      rollingWindow.length > 0
+        ? rollingWindow.reduce((sum, dp) => sum + dp.amount, 0) / rollingWindow.length
+        : latestAmount;
+
+    // Calculate change percentage
+    const changePercentage =
+      rollingAvg === 0 ? 0 : ((latestAmount - rollingAvg) / rollingAvg) * 100;
+
+    // Determine direction: >5% increasing, <-5% decreasing, otherwise stable
+    let direction: "increasing" | "decreasing" | "stable";
+    if (changePercentage > 5) {
+      direction = "increasing";
+    } else if (changePercentage < -5) {
+      direction = "decreasing";
+    } else {
+      direction = "stable";
+    }
+
+    // Confidence based on data quality (more months = higher confidence)
+    const confidence = Math.min(1.0, relevantMonths.length / 12);
+
+    return {
+      data: {
+        category,
+        direction,
+        changePercentage: roundTwo(changePercentage),
+        confidence: roundTwo(confidence),
+        dataPoints,
+      },
+      error: null,
+    };
+  }
+
+  /**
+   * Detect recurring expenses from user's expense history.
+   * Identifies monthly (~30d ±5), quarterly (~90d ±15), and yearly (~365d ±30) patterns.
+   */
+  async function detectRecurringExpenses(
+    userId: string
+  ): Promise<RecurringExpense[]> {
+    const all = await expenseStore.getAll();
+    const userExpenses = all.filter((e) => e.userId === userId);
+
+    if (userExpenses.length === 0) return [];
+
+    // Group expenses by category
+    const byCategory = new Map<ExpenseCategory, Expense[]>();
+    for (const e of userExpenses) {
+      const list = byCategory.get(e.category) ?? [];
+      list.push(e);
+      byCategory.set(e.category, list);
+    }
+
+    const results: RecurringExpense[] = [];
+
+    for (const [category, expenses] of byCategory) {
+      // Need at least 2 expenses to detect a pattern
+      if (expenses.length < 2) continue;
+
+      // Sort by dueDate ascending
+      const sorted = [...expenses].sort(
+        (a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
+      );
+
+      // Calculate intervals between consecutive expenses (in days)
+      const intervals: number[] = [];
+      for (let i = 1; i < sorted.length; i++) {
+        const prev = new Date(sorted[i - 1].dueDate).getTime();
+        const curr = new Date(sorted[i].dueDate).getTime();
+        intervals.push((curr - prev) / (1000 * 60 * 60 * 24));
+      }
+
+      if (intervals.length === 0) continue;
+
+      const detected = detectFrequency(intervals);
+      if (!detected) continue;
+
+      // Calculate average amount
+      const avgAmount =
+        sorted.reduce((sum, e) => sum + e.amount, 0) / sorted.length;
+
+      // Calculate next due date from last occurrence
+      const lastDate = new Date(sorted[sorted.length - 1].dueDate);
+      const nextDueDate = computeNextDueDate(lastDate, detected.frequency);
+
+      results.push({
+        category,
+        amount: roundTwo(avgAmount),
+        frequency: detected.frequency,
+        nextDueDate: nextDueDate.toISOString(),
+        confidence: roundTwo(detected.confidence),
+      });
+    }
+
+    return results;
+  }
+
+  return { generatePredictions, hasEnoughData, analyzeTrend, detectRecurringExpenses };
 }
 
 // ---------------------------------------------------------------------------
@@ -259,4 +414,63 @@ function computePrediction(
 
 function roundTwo(n: number): number {
   return Math.round(n * 100) / 100;
+}
+
+// ---------------------------------------------------------------------------
+// Recurring expense detection helpers
+// ---------------------------------------------------------------------------
+
+interface FrequencyDetection {
+  frequency: "monthly" | "quarterly" | "yearly";
+  confidence: number;
+}
+
+const FREQUENCY_CONFIGS: Array<{
+  frequency: "monthly" | "quarterly" | "yearly";
+  targetDays: number;
+  toleranceDays: number;
+}> = [
+  { frequency: "monthly", targetDays: 30, toleranceDays: 5 },
+  { frequency: "quarterly", targetDays: 90, toleranceDays: 15 },
+  { frequency: "yearly", targetDays: 365, toleranceDays: 30 },
+];
+
+function detectFrequency(intervals: number[]): FrequencyDetection | null {
+  let bestMatch: FrequencyDetection | null = null;
+
+  for (const config of FREQUENCY_CONFIGS) {
+    const matchingCount = intervals.filter(
+      (d) => Math.abs(d - config.targetDays) <= config.toleranceDays
+    ).length;
+
+    if (matchingCount === 0) continue;
+
+    // Confidence = proportion of intervals that match this frequency
+    const confidence = matchingCount / intervals.length;
+
+    if (confidence > 0 && (!bestMatch || confidence > bestMatch.confidence)) {
+      bestMatch = { frequency: config.frequency, confidence };
+    }
+  }
+
+  return bestMatch;
+}
+
+function computeNextDueDate(
+  lastDate: Date,
+  frequency: "monthly" | "quarterly" | "yearly"
+): Date {
+  const next = new Date(lastDate);
+  switch (frequency) {
+    case "monthly":
+      next.setMonth(next.getMonth() + 1);
+      break;
+    case "quarterly":
+      next.setMonth(next.getMonth() + 3);
+      break;
+    case "yearly":
+      next.setFullYear(next.getFullYear() + 1);
+      break;
+  }
+  return next;
 }

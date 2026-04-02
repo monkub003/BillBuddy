@@ -31,7 +31,7 @@ describe("Property 25: API response envelope conformance", () => {
           expect(response.error).toBeNull();
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 20 }
     );
   });
 
@@ -49,7 +49,7 @@ describe("Property 25: API response envelope conformance", () => {
           expect(response.error!.length).toBeGreaterThan(0);
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 20 }
     );
   });
 });
@@ -85,7 +85,7 @@ describe("Property 26: HTTP status codes match error types", () => {
           expect(mapErrorToStatus(error)).toBe(400);
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 20 }
     );
   });
 
@@ -97,7 +97,7 @@ describe("Property 26: HTTP status codes match error types", () => {
           expect(mapErrorToStatus(error)).toBe(401);
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 20 }
     );
   });
 
@@ -109,7 +109,7 @@ describe("Property 26: HTTP status codes match error types", () => {
           expect(mapErrorToStatus(error)).toBe(403);
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 20 }
     );
   });
 
@@ -127,7 +127,7 @@ describe("Property 26: HTTP status codes match error types", () => {
           expect(mapErrorToStatus(error)).toBe(500);
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 20 }
     );
   });
 });

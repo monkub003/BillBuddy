@@ -8,3 +8,11 @@ export {
   EmailWebhookPayload,
   ValidationResult,
 } from "./extraction";
+export { Budget } from "./budget";
+export {
+  Notification,
+  NotificationType,
+  NotificationChannel,
+  NotificationPreferences,
+  BudgetStatus,
+} from "./notification";

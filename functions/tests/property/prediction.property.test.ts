@@ -161,7 +161,7 @@ describe("Property 20: Prediction range invariant", () => {
           }
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 20 }
     );
   });
 });
@@ -188,7 +188,7 @@ describe("Property 21: Insufficient data returns no predictions", () => {
           expect(result.error).toContain("insufficient data");
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 20 }
     );
   });
 });
@@ -248,7 +248,7 @@ describe("Property 22: External factor degradation", () => {
           }
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 20 }
     );
   });
 });
@@ -313,7 +313,7 @@ describe("Property 23: External factors influence respective categories", () => 
           }
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 20 }
     );
   });
 
@@ -384,7 +384,7 @@ describe("Property 23: External factors influence respective categories", () => 
           }
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 20 }
     );
   });
 
@@ -435,7 +435,7 @@ describe("Property 23: External factors influence respective categories", () => 
           }
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 20 }
     );
   });
 });

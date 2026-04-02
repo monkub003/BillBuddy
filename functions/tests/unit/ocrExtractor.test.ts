@@ -1,4 +1,9 @@
-import { createOCRExtractor } from "../../src/extractors/ocrExtractor";
+import {
+  createOCRExtractor,
+  validateImageUrl,
+  buildImageQualityError,
+  IMAGE_QUALITY_TIPS,
+} from "../../src/extractors/ocrExtractor";
 import { AIClient } from "../../src/extractors/aiClient";
 import { ExtractionResult } from "../../src/types/extraction";
 
@@ -75,7 +80,12 @@ describe("OCR Extractor", () => {
       );
 
       expect(result.data).toBeNull();
-      expect(result.error).toBe("image is unreadable or too low quality");
+      expect(result.error).toContain("Image is unreadable or too low quality");
+      expect(result.error).toContain("retake the photo");
+      // Verify tips are included (Req 1.4)
+      expect(result.error).toContain("good lighting");
+      expect(result.error).toContain("camera steady");
+      expect(result.error).toContain("glare");
     });
 
     it("should return error when AI service is unavailable", async () => {
@@ -154,6 +164,71 @@ describe("OCR Extractor", () => {
       expect(result.error).toBeNull();
       expect(result.data!.category).toBe("manual");
       expect(result.data!.needsReview).toBe(true);
+    });
+  });
+
+  describe("validateImage", () => {
+    it("should return valid for a non-empty URL", () => {
+      const aiClient = mockAIClient();
+      const extractor = createOCRExtractor({ aiClient });
+
+      const result = extractor.validateImage("gs://bucket/img.jpg");
+
+      expect(result.valid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+    });
+
+    it("should return invalid for an empty URL", () => {
+      const aiClient = mockAIClient();
+      const extractor = createOCRExtractor({ aiClient });
+
+      const result = extractor.validateImage("");
+
+      expect(result.valid).toBe(false);
+      expect(result.errors.length).toBeGreaterThan(0);
+    });
+
+    it("should return invalid for a whitespace-only URL", () => {
+      const aiClient = mockAIClient();
+      const extractor = createOCRExtractor({ aiClient });
+
+      const result = extractor.validateImage("   ");
+
+      expect(result.valid).toBe(false);
+      expect(result.errors.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe("validateImageUrl", () => {
+    it("should return valid for a proper URL", () => {
+      const result = validateImageUrl("gs://bucket/receipt.jpg");
+      expect(result.valid).toBe(true);
+      expect(result.errors).toEqual([]);
+    });
+
+    it("should return invalid with message for empty string", () => {
+      const result = validateImageUrl("");
+      expect(result.valid).toBe(false);
+      expect(result.errors[0]).toContain("Image URL is required");
+    });
+  });
+
+  describe("buildImageQualityError", () => {
+    it("should include all quality tips", () => {
+      const error = buildImageQualityError();
+      expect(error).toContain("retake the photo");
+      for (const tip of IMAGE_QUALITY_TIPS) {
+        expect(error).toContain(tip);
+      }
+    });
+  });
+
+  describe("IMAGE_QUALITY_TIPS", () => {
+    it("should contain tips about lighting, steadiness, and glare", () => {
+      const joined = IMAGE_QUALITY_TIPS.join(" ");
+      expect(joined).toContain("lighting");
+      expect(joined).toContain("steady");
+      expect(joined).toContain("glare");
     });
   });
 });

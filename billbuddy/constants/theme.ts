@@ -27,6 +27,37 @@ export const Colors = {
   },
 };
 
+/** BillBuddy dark theme tokens matching design document */
+export const Theme = {
+  background: {
+    primary: '#1A1A2E',
+    card: '#16213E',
+    tabBar: '#0F0F23',
+  },
+  accent: {
+    green: '#0F9D58',
+    greenLight: '#27AE60',
+  },
+  text: {
+    primary: '#FFFFFF',
+    secondary: '#A0A0B8',
+    muted: '#6C6C80',
+  },
+  status: {
+    healthy: '#0F9D58',
+    warning: '#F39C12',
+    critical: '#E74C3C',
+  },
+  chart: {
+    electricity: '#F39C12',
+    water: '#3498DB',
+    insurance: '#E91E8C',
+    loan: '#E74C3C',
+    gas: '#2ECC71',
+    manual: '#9B59B6',
+  },
+} as const;
+
 export const Fonts = Platform.select({
   ios: {
     /** iOS `UIFontDescriptorSystemDesignDefault` */

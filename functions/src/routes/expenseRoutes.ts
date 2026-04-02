@@ -6,28 +6,77 @@ import {
 import { authMiddleware, AuthenticatedRequest } from "../middleware/authMiddleware";
 import { sanitizeBody, validateBody, expenseSchema } from "../middleware/inputSanitizer";
 import { ExpenseFilters } from "../types/expense";
+import { Budget } from "../types/budget";
+import { User } from "../types/user";
+import { FirestoreStore } from "../services/firestore";
+import { createCategorizationService, CategorizationServiceDeps } from "../services/categorizationService";
+import { createFinancialPlanner } from "../services/financialPlanner";
+
+export interface ExpenseRoutesDeps extends Partial<ExpenseServiceDeps> {
+  categorizationDeps?: CategorizationServiceDeps;
+  budgetStore?: FirestoreStore<Budget>;
+  userStore?: FirestoreStore<User>;
+}
 
 /**
  * Factory that creates the expense router.
- * Accepts optional ExpenseServiceDeps so callers can inject a custom store
- * (e.g. in-memory for tests, real Firestore in production).
+ * Accepts optional deps so callers can inject custom stores.
+ * Wires categorization into the expense creation pipeline:
+ * when creating an expense, auto-categorize if the category is "manual" or not explicitly set.
  */
-export function createExpenseRouter(deps?: Partial<ExpenseServiceDeps>): Router {
+export function createExpenseRouter(deps?: ExpenseRoutesDeps): Router {
   const router = Router();
   const expenseService = createExpenseService(deps);
+  const categorizationService = createCategorizationService(deps?.categorizationDeps);
+
+  // Financial planner for budget auto-update on new expense (Req 7.5)
+  const financialPlanner = (deps?.budgetStore && deps?.expenseStore)
+    ? createFinancialPlanner({
+        expenseStore: deps.expenseStore,
+        userStore: deps.userStore,
+        budgetStore: deps.budgetStore,
+      })
+    : null;
 
   // All expense routes require authentication
   router.use(authMiddleware);
 
-  // POST /expenses — create expense
+  // POST /expenses — create expense (with auto-categorization pipeline)
   router.post("/", sanitizeBody, validateBody(expenseSchema), async (req: Request, res: Response) => {
     const userId = (req as AuthenticatedRequest).userId;
-    const result = await expenseService.createExpense(userId, req.body);
+    const data = { ...req.body };
+
+    // Auto-categorize if extracted via email/image (not manual entry)
+    if (data.extractedVia !== "manual") {
+      // Mark extracted expenses for review (Req 1.3)
+      data.needsReview = true;
+
+      try {
+        const catResult = await categorizationService.categorize(data);
+        // Only override category if categorization is confident enough
+        if (!catResult.needsUserConfirmation) {
+          data.category = catResult.category;
+        }
+      } catch {
+        // Categorization failure is non-fatal — proceed with original category
+      }
+    }
+
+    const result = await expenseService.createExpense(userId, data);
 
     if (result.error) {
       const status = mapErrorToStatus(result.error);
       res.status(status).json(result);
       return;
+    }
+
+    // Auto-update budget plan when a new expense is added (Req 7.5)
+    if (financialPlanner) {
+      try {
+        await financialPlanner.onExpenseAdded(userId);
+      } catch {
+        // Budget update failure is non-fatal
+      }
     }
 
     res.status(200).json(result);
@@ -56,6 +105,21 @@ export function createExpenseRouter(deps?: Partial<ExpenseServiceDeps>): Router 
     }
 
     const result = await expenseService.getExpenses(userId, filters);
+    res.status(200).json(result);
+  });
+
+  // PUT /expenses/:id/confirm — confirm an extracted expense (sets needsReview to false)
+  router.put("/:id/confirm", async (req: Request, res: Response) => {
+    const userId = (req as AuthenticatedRequest).userId;
+    const expenseId = req.params.id as string;
+    const result = await expenseService.confirmExpense(userId, expenseId);
+
+    if (result.error) {
+      const status = mapErrorToStatus(result.error);
+      res.status(status).json(result);
+      return;
+    }
+
     res.status(200).json(result);
   });
 

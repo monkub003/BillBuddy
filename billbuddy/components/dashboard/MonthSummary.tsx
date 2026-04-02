@@ -1,59 +1,170 @@
-import React from "react";
-import { View, Text } from "react-native";
+import React, { useMemo } from "react";
+import { View, Text, StyleSheet } from "react-native";
 import { Expense } from "@/types";
+import { Theme } from "@/constants/theme";
+
+const THAI_MONTH_ABBR = [
+  "ม.ค.",
+  "ก.พ.",
+  "มี.ค.",
+  "เม.ย.",
+  "พ.ค.",
+  "มิ.ย.",
+  "ก.ค.",
+  "ส.ค.",
+  "ก.ย.",
+  "ต.ค.",
+  "พ.ย.",
+  "ธ.ค.",
+];
+
+interface MonthData {
+  month: number; // 0-11
+  year: number;
+  label: string;
+  total: number;
+  isCurrent: boolean;
+}
 
 interface Props {
   expenses: Expense[];
-  monthlyIncome: number | null;
 }
 
-export function MonthSummary({ expenses, monthlyIncome }: Props) {
-  const totalPaid = expenses
-    .filter((e) => e.isPaid)
-    .reduce((sum, e) => sum + e.amount, 0);
+function computeMonthlyData(expenses: Expense[]): MonthData[] {
+  const now = new Date();
+  const currentMonth = now.getMonth();
+  const currentYear = now.getFullYear();
 
-  const totalUnpaid = expenses
-    .filter((e) => !e.isPaid)
-    .reduce((sum, e) => sum + e.amount, 0);
+  // Build last 6 months (including current)
+  const months: MonthData[] = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(currentYear, currentMonth - i, 1);
+    const m = d.getMonth();
+    const y = d.getFullYear();
+    months.push({
+      month: m,
+      year: y,
+      label: THAI_MONTH_ABBR[m],
+      total: 0,
+      isCurrent: m === currentMonth && y === currentYear,
+    });
+  }
 
-  const total = totalPaid + totalUnpaid;
+  // Aggregate expense amounts into matching months
+  for (const e of expenses) {
+    const date = new Date(e.dueDate);
+    const eMonth = date.getMonth();
+    const eYear = date.getFullYear();
+    const entry = months.find((md) => md.month === eMonth && md.year === eYear);
+    if (entry) {
+      entry.total += e.amount;
+    }
+  }
 
-  const incomeRatio =
-    monthlyIncome && monthlyIncome > 0 ? total / monthlyIncome : null;
+  return months;
+}
+
+export function MonthSummary({ expenses }: Props) {
+  const data = useMemo(() => computeMonthlyData(expenses), [expenses]);
+  const maxTotal = Math.max(...data.map((d) => d.total), 1);
 
   return (
-    <View className="bg-white rounded-xl p-4 mb-4">
-      <Text className="text-base font-semibold text-gray-800 mb-3">
-        Monthly Summary
-      </Text>
-      <View className="flex-row justify-between mb-2">
-        <View className="flex-1 items-center">
-          <Text className="text-xs text-gray-500">Total</Text>
-          <Text className="text-lg font-bold text-gray-900">
-            ฿{total.toLocaleString()}
-          </Text>
-        </View>
-        <View className="flex-1 items-center">
-          <Text className="text-xs text-green-600">Paid</Text>
-          <Text className="text-lg font-bold text-green-700">
-            ฿{totalPaid.toLocaleString()}
-          </Text>
-        </View>
-        <View className="flex-1 items-center">
-          <Text className="text-xs text-red-500">Unpaid</Text>
-          <Text className="text-lg font-bold text-red-600">
-            ฿{totalUnpaid.toLocaleString()}
-          </Text>
-        </View>
+    <View style={styles.card}>
+      <Text style={styles.title}>ค่าใช้จ่ายรายเดือน</Text>
+      <View style={styles.chartContainer}>
+        {data.map((item) => {
+          const barHeight = (item.total / maxTotal) * MAX_BAR_HEIGHT;
+          const barColor = item.isCurrent
+            ? Theme.accent.green
+            : Theme.text.muted;
+
+          return (
+            <View key={`${item.year}-${item.month}`} style={styles.barColumn}>
+              <Text style={styles.amountLabel}>
+                {item.total > 0
+                  ? `฿${Math.round(item.total / 1000)}k`
+                  : ""}
+              </Text>
+              <View style={styles.barTrack}>
+                <View
+                  style={[
+                    styles.bar,
+                    {
+                      height: Math.max(barHeight, item.total > 0 ? 4 : 0),
+                      backgroundColor: barColor,
+                    },
+                  ]}
+                />
+              </View>
+              <Text
+                style={[
+                  styles.monthLabel,
+                  item.isCurrent && styles.monthLabelCurrent,
+                ]}
+              >
+                {item.label}
+              </Text>
+            </View>
+          );
+        })}
       </View>
-      {incomeRatio !== null && (
-        <View className="mt-2 pt-2 border-t border-gray-100">
-          <Text className="text-xs text-gray-500 text-center">
-            Income Ratio: {(incomeRatio * 100).toFixed(0)}% of ฿
-            {monthlyIncome!.toLocaleString()}
-          </Text>
-        </View>
-      )}
     </View>
   );
 }
+
+const MAX_BAR_HEIGHT = 100;
+
+const styles = StyleSheet.create({
+  card: {
+    backgroundColor: Theme.background.card,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    elevation: 4,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+  },
+  title: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: Theme.text.primary,
+    marginBottom: 16,
+  },
+  chartContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-end",
+    paddingHorizontal: 4,
+  },
+  barColumn: {
+    flex: 1,
+    alignItems: "center",
+    gap: 4,
+  },
+  amountLabel: {
+    fontSize: 10,
+    color: Theme.text.secondary,
+    marginBottom: 2,
+  },
+  barTrack: {
+    height: MAX_BAR_HEIGHT,
+    justifyContent: "flex-end",
+    alignItems: "center",
+    width: "100%",
+  },
+  bar: {
+    width: 24,
+    borderRadius: 4,
+  },
+  monthLabel: {
+    fontSize: 11,
+    color: Theme.text.muted,
+    marginTop: 4,
+  },
+  monthLabelCurrent: {
+    color: Theme.accent.green,
+    fontWeight: "600",
+  },
+});

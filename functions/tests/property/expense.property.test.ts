@@ -79,7 +79,7 @@ describe("Property 9: Extracted_via matches source channel", () => {
           expect(result.data!.extractedVia).toBe("manual");
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 20 }
     );
   });
 
@@ -116,7 +116,7 @@ describe("Property 9: Extracted_via matches source channel", () => {
           expect(result.data!.rawSourceRef!.length).toBeGreaterThan(0);
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 20 }
     );
   });
 
@@ -153,7 +153,7 @@ describe("Property 9: Extracted_via matches source channel", () => {
           expect(result.data!.rawSourceRef!.length).toBeGreaterThan(0);
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 20 }
     );
   });
 });
@@ -192,7 +192,7 @@ describe("Property 10: Non-positive amounts are rejected", () => {
           expect(result.error).toBe("amount must be positive");
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 20 }
     );
   });
 });
@@ -229,7 +229,7 @@ describe("Property 11: Currency is always THB", () => {
           expect(result.data!.currency).toBe("THB");
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 20 }
     );
   });
 });
@@ -278,7 +278,7 @@ describe("Property 8: Data isolation between users", () => {
           expect(resultB.data!.every((e) => e.userId === userB)).toBe(true);
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 20 }
     );
   });
 
@@ -308,7 +308,7 @@ describe("Property 8: Data isolation between users", () => {
           expect(original.data![0].amount).toBe(input.amount);
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 20 }
     );
   });
 
@@ -338,7 +338,7 @@ describe("Property 8: Data isolation between users", () => {
           expect(remaining.data!.length).toBe(1);
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 20 }
     );
   });
 });

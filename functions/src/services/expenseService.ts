@@ -42,6 +42,7 @@ export function createExpenseService(deps?: Partial<ExpenseServiceDeps>) {
       isPaid: data.isPaid,
       extractedVia: data.extractedVia,
       rawSourceRef: data.rawSourceRef,
+      needsReview: (data as any).needsReview ?? false,
       createdAt: new Date().toISOString(),
     };
 
@@ -129,5 +130,28 @@ export function createExpenseService(deps?: Partial<ExpenseServiceDeps>) {
     return { data: undefined as unknown as void, error: null };
   }
 
-  return { createExpense, getExpenses, updateExpense, deleteExpense, _expenseStore: expenseStore };
+  async function confirmExpense(
+    userId: string,
+    expenseId: string
+  ): Promise<ApiResponse<Expense>> {
+    const existing = await expenseStore.get(expenseId);
+
+    if (!existing) {
+      return { data: null, error: "access denied" };
+    }
+
+    if (existing.userId !== userId) {
+      return { data: null, error: "access denied" };
+    }
+
+    const updated: Expense = {
+      ...existing,
+      needsReview: false,
+    };
+
+    await expenseStore.set(expenseId, updated);
+    return { data: updated, error: null };
+  }
+
+  return { createExpense, getExpenses, updateExpense, deleteExpense, confirmExpense, _expenseStore: expenseStore };
 }

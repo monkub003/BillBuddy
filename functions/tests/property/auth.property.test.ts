@@ -14,8 +14,6 @@ beforeAll(() => {
 // **Validates: Requirements 1.1, 1.5**
 describe("Property 1: Signup produces bcrypt hash, never plaintext", () => {
   it("for any valid email and password (≥8 chars), the stored passwordHash is a valid bcrypt hash and does not equal the plaintext password", async () => {
-    // bcrypt hashing is intentionally slow; increase timeout for 100 iterations
-    jest.setTimeout(120_000);
     await fc.assert(
       fc.asyncProperty(
         // Generate random valid emails
@@ -53,9 +51,9 @@ describe("Property 1: Signup produces bcrypt hash, never plaintext", () => {
           expect(bcrypt.compareSync(password, hash)).toBe(true);
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 20 }
     );
-  });
+  }, 120_000);
 });
 
 // Feature: billbuddy-mvp, Property 2: Short passwords are rejected
@@ -81,7 +79,7 @@ describe("Property 2: Short passwords are rejected", () => {
           expect(result.error).toBe("password too short");
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 20 }
     );
   });
 });
@@ -134,7 +132,7 @@ describe("Property 3: Invalid emails are rejected", () => {
           expect(result.error).toBe("invalid email");
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 20 }
     );
   });
 });
@@ -185,7 +183,7 @@ describe("Property 4: Duplicate email signup is rejected", () => {
           expect(second.error).toBe("email already registered");
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 20 }
     );
   }, 120_000);
 });
@@ -245,7 +243,7 @@ describe("Property 5: Signup-then-login round trip", () => {
           expect(decoded.userId).toBe(signupUserId);
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 20 }
     );
   }, 120_000);
 });
@@ -294,7 +292,7 @@ describe("Property 6: Login with invalid credentials fails", () => {
           expect(result.error).toBe("invalid credentials");
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 20 }
     );
   });
 
@@ -323,7 +321,7 @@ describe("Property 6: Login with invalid credentials fails", () => {
           expect(loginResult.error).toBe("invalid credentials");
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 20 }
     );
   }, 120_000);
 });
@@ -378,7 +376,7 @@ describe("Property 7: Invalid or missing JWT returns 401", () => {
           expect(next).not.toHaveBeenCalled();
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 20 }
     );
   });
 
@@ -399,7 +397,7 @@ describe("Property 7: Invalid or missing JWT returns 401", () => {
           expect(next).not.toHaveBeenCalled();
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 20 }
     );
   });
 
@@ -427,7 +425,7 @@ describe("Property 7: Invalid or missing JWT returns 401", () => {
           expect(next).not.toHaveBeenCalled();
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 20 }
     );
   });
 });

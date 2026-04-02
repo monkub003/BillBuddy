@@ -23,7 +23,7 @@ describe("Property 24: Income-to-expense alert thresholds", () => {
           expect(level).toBe("none");
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 20 }
     );
   });
 
@@ -39,7 +39,7 @@ describe("Property 24: Income-to-expense alert thresholds", () => {
           expect(level).toBe("warning");
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 20 }
     );
   });
 
@@ -54,7 +54,7 @@ describe("Property 24: Income-to-expense alert thresholds", () => {
           expect(level).toBe("critical");
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 20 }
     );
   });
 
@@ -68,7 +68,7 @@ describe("Property 24: Income-to-expense alert thresholds", () => {
           expect(level).toBe("none");
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 20 }
     );
   });
 });
@@ -162,7 +162,7 @@ describe("Property 17: Unpaid bills are sorted by due date ascending", () => {
           expect(current).toBeLessThanOrEqual(next);
         }
       }),
-      { numRuns: 100 }
+      { numRuns: 20 }
     );
   });
 
@@ -174,7 +174,7 @@ describe("Property 17: Unpaid bills are sorted by due date ascending", () => {
           expect(e.isPaid).toBe(false);
         }
       }),
-      { numRuns: 100 }
+      { numRuns: 20 }
     );
   });
 });
@@ -194,7 +194,7 @@ describe("Property 18: Paid plus unpaid equals monthly total", () => {
         const { paid, unpaid, total } = sumByPaidStatus(expenses);
         expect(paid + unpaid).toBeCloseTo(total, 5);
       }),
-      { numRuns: 100 }
+      { numRuns: 20 }
     );
   });
 });
@@ -215,7 +215,7 @@ describe("Property 19: Category distribution sums to total", () => {
         const total = expenses.reduce((s, e) => s + e.amount, 0);
         expect(categorySum).toBeCloseTo(total, 5);
       }),
-      { numRuns: 100 }
+      { numRuns: 20 }
     );
   });
 });

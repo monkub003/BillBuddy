@@ -255,3 +255,56 @@ describe("ExpenseService.deleteExpense", () => {
     expect(result.error).toBe("access denied");
   });
 });
+
+
+// ---------------------------------------------------------------------------
+// confirmExpense
+// ---------------------------------------------------------------------------
+describe("ExpenseService.confirmExpense", () => {
+  it("sets needsReview to false on an owned expense", async () => {
+    const svc = freshService();
+    const created = await svc.createExpense("u1", makeInput());
+    const id = created.data!.id;
+
+    // Manually set needsReview to true (simulating extraction flow)
+    await svc.updateExpense("u1", id, { needsReview: true } as any);
+
+    const result = await svc.confirmExpense("u1", id);
+    expect(result.error).toBeNull();
+    expect(result.data).toBeDefined();
+    expect(result.data!.needsReview).toBe(false);
+    expect(result.data!.id).toBe(id);
+    expect(result.data!.userId).toBe("u1");
+  });
+
+  it("returns access denied when expense belongs to another user", async () => {
+    const svc = freshService();
+    const created = await svc.createExpense("u1", makeInput());
+    const id = created.data!.id;
+
+    const result = await svc.confirmExpense("u2", id);
+    expect(result.data).toBeNull();
+    expect(result.error).toBe("access denied");
+  });
+
+  it("returns access denied when expense does not exist", async () => {
+    const svc = freshService();
+    const result = await svc.confirmExpense("u1", "nonexistent-id");
+    expect(result.data).toBeNull();
+    expect(result.error).toBe("access denied");
+  });
+
+  it("preserves all other fields when confirming", async () => {
+    const svc = freshService();
+    const created = await svc.createExpense("u1", makeInput({ amount: 250, category: "water" }));
+    const id = created.data!.id;
+
+    await svc.updateExpense("u1", id, { needsReview: true } as any);
+
+    const result = await svc.confirmExpense("u1", id);
+    expect(result.data!.amount).toBe(250);
+    expect(result.data!.category).toBe("water");
+    expect(result.data!.currency).toBe("THB");
+    expect(result.data!.needsReview).toBe(false);
+  });
+});

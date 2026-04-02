@@ -336,6 +336,74 @@ describe("DELETE /expenses/:id", () => {
   });
 });
 
+describe("PUT /expenses/:id/confirm", () => {
+  it("returns 200 and sets needsReview to false", async () => {
+    const { app } = buildApp();
+    const token = makeToken("user-1");
+
+    const createRes = await request(app)
+      .post("/expenses")
+      .set("Authorization", `Bearer ${token}`)
+      .send(validExpense);
+    const expenseId = createRes.body.data.id;
+
+    // Set needsReview to true first (simulating extraction)
+    await request(app)
+      .put(`/expenses/${expenseId}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ needsReview: true });
+
+    const res = await request(app)
+      .put(`/expenses/${expenseId}/confirm`)
+      .set("Authorization", `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.error).toBeNull();
+    expect(res.body.data.needsReview).toBe(false);
+    expect(res.body.data.id).toBe(expenseId);
+  });
+
+  it("returns 403 when confirming another user's expense", async () => {
+    const { app } = buildApp();
+    const tokenA = makeToken("user-a");
+    const tokenB = makeToken("user-b");
+
+    const createRes = await request(app)
+      .post("/expenses")
+      .set("Authorization", `Bearer ${tokenA}`)
+      .send(validExpense);
+    const expenseId = createRes.body.data.id;
+
+    const res = await request(app)
+      .put(`/expenses/${expenseId}/confirm`)
+      .set("Authorization", `Bearer ${tokenB}`);
+
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe("access denied");
+  });
+
+  it("returns 403 for nonexistent expense", async () => {
+    const { app } = buildApp();
+    const token = makeToken("user-1");
+
+    const res = await request(app)
+      .put("/expenses/nonexistent-id/confirm")
+      .set("Authorization", `Bearer ${token}`);
+
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe("access denied");
+  });
+
+  it("returns 401 without auth token", async () => {
+    const { app } = buildApp();
+
+    const res = await request(app).put("/expenses/some-id/confirm");
+
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe("unauthorized");
+  });
+});
+
 describe("API response envelope conformance", () => {
   it("success responses have data non-null and error null", async () => {
     const { app } = buildApp();

@@ -45,7 +45,8 @@ export function usePrediction() {
       setState((s) => ({
         ...s,
         loading: false,
-        error: err instanceof Error ? err.message : "Failed to fetch predictions",
+        error:
+          err instanceof Error ? err.message : "Failed to fetch predictions",
       }));
     }
   }, []);

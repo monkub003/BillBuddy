@@ -10,5 +10,6 @@ export interface PredictionResult {
   category: ExpenseCategory;
   predictedMin: number;
   predictedMax: number;
+  confidence: number; // 0.0 - 1.0
   factors: PredictionContext;
 }

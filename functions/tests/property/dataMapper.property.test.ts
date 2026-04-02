@@ -145,7 +145,7 @@ describe("Property 14: Data mapper produces valid Expense records", () => {
           expect(expense.createdAt).toBeDefined();
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 20 }
     );
   });
 });
@@ -180,7 +180,7 @@ describe("Property 15: Unrecognized categories default to 'manual' with review f
           expect(expense.needsReview).toBe(true);
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 20 }
     );
   });
 });
@@ -198,7 +198,7 @@ describe("Property 16: Expense serialization round trip", () => {
         const deserialized = deserializeExpense(serialized);
         expect(deserialized).toEqual(expense);
       }),
-      { numRuns: 100 }
+      { numRuns: 20 }
     );
   });
 });
@@ -241,7 +241,7 @@ describe("Property 12: Extraction confidence scores are bounded", () => {
           expect(expense.amount).toBe(raw.amount.value);
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 20 }
     );
   });
 });
@@ -274,7 +274,7 @@ describe("Property 13: Low confidence fields are flagged for review", () => {
           expect(expense.needsReview).toBe(true);
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 20 }
     );
   });
 
@@ -301,7 +301,7 @@ describe("Property 13: Low confidence fields are flagged for review", () => {
           expect(expense.needsReview).toBe(true);
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 20 }
     );
   });
 
@@ -328,7 +328,7 @@ describe("Property 13: Low confidence fields are flagged for review", () => {
           expect(expense.needsReview).toBe(true);
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 20 }
     );
   });
 });

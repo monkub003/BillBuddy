@@ -26,7 +26,7 @@ describe("Data Mapper", () => {
       expect(expense.isPaid).toBe(false);
       expect(expense.extractedVia).toBe("image");
       expect(expense.rawSourceRef).toBe("storage://img.jpg");
-      expect(expense.needsReview).toBe(false);
+      expect(expense.needsReview).toBe(true);
       expect(expense.id).toBeDefined();
       expect(expense.createdAt).toBeDefined();
     });

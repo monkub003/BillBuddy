@@ -6,30 +6,51 @@ import {
   TouchableOpacity,
   ScrollView,
   Alert,
+  StyleSheet,
 } from "react-native";
 import { router } from "expo-router";
 import { useExpenses } from "@/hooks/useExpenses";
 import { ExtractionResult, ExpenseCategory } from "@/types";
+import { Theme } from "@/constants/theme";
 
 const LOW_CONFIDENCE_THRESHOLD = 0.5;
+const VERY_LOW_CONFIDENCE_THRESHOLD = 0.3;
+
+const CATEGORIES: { value: ExpenseCategory; label: string }[] = [
+  { value: "electricity", label: "ค่าไฟ" },
+  { value: "water", label: "ค่าน้ำ" },
+  { value: "insurance", label: "ประกัน" },
+  { value: "loan", label: "สินเชื่อ" },
+  { value: "gas", label: "น้ำมัน" },
+  { value: "manual", label: "อื่นๆ" },
+];
 
 interface Props {
   extraction: ExtractionResult;
   sourceRef: string;
   extractedVia: "email" | "image";
   onConfirm?: () => void;
+  onCancel?: () => void;
 }
 
 function confidenceColor(confidence: number): string {
-  if (confidence >= 0.8) return "text-green-600";
-  if (confidence >= LOW_CONFIDENCE_THRESHOLD) return "text-yellow-600";
-  return "text-red-600";
+  if (confidence >= 0.7) return Theme.status.healthy;
+  if (confidence >= LOW_CONFIDENCE_THRESHOLD) return Theme.status.warning;
+  return Theme.status.critical;
 }
 
 function confidenceLabel(confidence: number): string {
-  if (confidence >= 0.8) return "High";
-  if (confidence >= LOW_CONFIDENCE_THRESHOLD) return "Medium";
-  return "Low";
+  if (confidence >= 0.7) return "สูง";
+  if (confidence >= LOW_CONFIDENCE_THRESHOLD) return "ปานกลาง";
+  return "ต่ำ";
+}
+
+function hasVeryLowConfidence(extraction: ExtractionResult): boolean {
+  return (
+    extraction.amount.confidence < VERY_LOW_CONFIDENCE_THRESHOLD ||
+    extraction.category.confidence < VERY_LOW_CONFIDENCE_THRESHOLD ||
+    extraction.dueDate.confidence < VERY_LOW_CONFIDENCE_THRESHOLD
+  );
 }
 
 export function ExtractionReview({
@@ -37,25 +58,23 @@ export function ExtractionReview({
   sourceRef,
   extractedVia,
   onConfirm,
+  onCancel,
 }: Props) {
   const { createExpense, loading } = useExpenses();
 
   const [amount, setAmount] = useState(String(extraction.amount.value));
-  const [category, setCategory] = useState(extraction.category.value);
+  const [category, setCategory] = useState<ExpenseCategory>(extraction.category.value);
   const [dueDate, setDueDate] = useState(extraction.dueDate.value);
-
-  const isLowConfidence = (confidence: number) =>
-    confidence < LOW_CONFIDENCE_THRESHOLD;
 
   const handleConfirm = async () => {
     const numAmount = parseFloat(amount);
     if (isNaN(numAmount) || numAmount <= 0) {
-      Alert.alert("Validation Error", "Amount must be greater than 0");
+      Alert.alert("ข้อมูลไม่ถูกต้อง", "จำนวนเงินต้องมากกว่า 0");
       return;
     }
 
     const result = await createExpense({
-      category: category as ExpenseCategory,
+      category,
       amount: numAmount,
       dueDate,
       isPaid: false,
@@ -64,9 +83,9 @@ export function ExtractionReview({
     });
 
     if (result) {
-      Alert.alert("Success", "Expense confirmed and saved", [
+      Alert.alert("สำเร็จ", "บันทึกค่าใช้จ่ายเรียบร้อย", [
         {
-          text: "OK",
+          text: "ตกลง",
           onPress: () => {
             onConfirm?.();
             router.navigate("/(tabs)");
@@ -76,109 +95,325 @@ export function ExtractionReview({
     }
   };
 
+  const handleCancel = () => {
+    if (onCancel) {
+      onCancel();
+    } else {
+      router.back();
+    }
+  };
+
+  const showRetakeTips = extractedVia === "image" && hasVeryLowConfidence(extraction);
+
   return (
-    <ScrollView className="flex-1 bg-gray-50" contentContainerClassName="p-4">
-      <Text className="text-lg font-semibold text-gray-800 mb-2">
-        Review Extracted Data
-      </Text>
-      <Text className="text-sm text-gray-400 mb-4">
-        Please verify the extracted fields. Low-confidence fields are
-        highlighted for correction.
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+    >
+      <Text style={styles.title}>ตรวจสอบข้อมูลที่สกัดได้</Text>
+      <Text style={styles.subtitle}>
+        กรุณาตรวจสอบข้อมูลด้านล่าง ช่องที่ความเชื่อมั่นต่ำควรแก้ไขก่อนยืนยัน
       </Text>
 
-      {/* Amount */}
-      <View
-        className={`bg-white rounded-lg p-4 mb-3 border ${
-          isLowConfidence(extraction.amount.confidence)
-            ? "border-red-300"
-            : "border-gray-200"
-        }`}
-      >
-        <View className="flex-row justify-between mb-1">
-          <Text className="text-sm font-medium text-gray-700">Amount (THB)</Text>
-          <Text className={`text-xs ${confidenceColor(extraction.amount.confidence)}`}>
-            {confidenceLabel(extraction.amount.confidence)} (
-            {(extraction.amount.confidence * 100).toFixed(0)}%)
+      {/* Retake tips for very low quality images */}
+      {showRetakeTips && (
+        <View style={styles.retakeBanner}>
+          <Text style={styles.retakeBannerTitle}>⚠ คุณภาพรูปต่ำ</Text>
+          <Text style={styles.retakeBannerText}>
+            ลองถ่ายรูปใหม่ให้ชัดขึ้น โดย:
           </Text>
+          <Text style={styles.retakeTip}>• ถ่ายในที่มีแสงสว่างเพียงพอ</Text>
+          <Text style={styles.retakeTip}>• วางบิลบนพื้นเรียบ ไม่ยับ</Text>
+          <Text style={styles.retakeTip}>• จัดให้บิลอยู่ในกรอบภาพทั้งหมด</Text>
+          <Text style={styles.retakeTip}>• หลีกเลี่ยงเงาและแสงสะท้อน</Text>
+        </View>
+      )}
+
+      {/* Amount field */}
+      <View
+        style={[
+          styles.fieldCard,
+          extraction.amount.confidence < LOW_CONFIDENCE_THRESHOLD && styles.fieldCardWarning,
+        ]}
+      >
+        <View style={styles.fieldHeader}>
+          <Text style={styles.fieldLabel}>จำนวนเงิน (THB)</Text>
+          <View style={[styles.confidenceBadge, { backgroundColor: confidenceColor(extraction.amount.confidence) + "22" }]}>
+            <View style={[styles.confidenceDot, { backgroundColor: confidenceColor(extraction.amount.confidence) }]} />
+            <Text style={[styles.confidenceText, { color: confidenceColor(extraction.amount.confidence) }]}>
+              {confidenceLabel(extraction.amount.confidence)} ({(extraction.amount.confidence * 100).toFixed(0)}%)
+            </Text>
+          </View>
         </View>
         <TextInput
-          className="border border-gray-200 rounded px-3 py-2 text-base"
+          style={styles.textInput}
           keyboardType="decimal-pad"
           value={amount}
           onChangeText={setAmount}
+          placeholderTextColor={Theme.text.muted}
+          placeholder="0.00"
         />
-        {isLowConfidence(extraction.amount.confidence) && (
-          <Text className="text-xs text-red-500 mt-1">
-            ⚠ Low confidence — please verify this value
-          </Text>
+        {extraction.amount.confidence < LOW_CONFIDENCE_THRESHOLD && (
+          <Text style={styles.warningText}>⚠ ความเชื่อมั่นต่ำ — กรุณาตรวจสอบค่านี้</Text>
         )}
       </View>
 
-      {/* Category */}
+      {/* Category field */}
       <View
-        className={`bg-white rounded-lg p-4 mb-3 border ${
-          isLowConfidence(extraction.category.confidence)
-            ? "border-red-300"
-            : "border-gray-200"
-        }`}
+        style={[
+          styles.fieldCard,
+          extraction.category.confidence < LOW_CONFIDENCE_THRESHOLD && styles.fieldCardWarning,
+        ]}
       >
-        <View className="flex-row justify-between mb-1">
-          <Text className="text-sm font-medium text-gray-700">Category</Text>
-          <Text className={`text-xs ${confidenceColor(extraction.category.confidence)}`}>
-            {confidenceLabel(extraction.category.confidence)} (
-            {(extraction.category.confidence * 100).toFixed(0)}%)
-          </Text>
+        <View style={styles.fieldHeader}>
+          <Text style={styles.fieldLabel}>หมวดหมู่</Text>
+          <View style={[styles.confidenceBadge, { backgroundColor: confidenceColor(extraction.category.confidence) + "22" }]}>
+            <View style={[styles.confidenceDot, { backgroundColor: confidenceColor(extraction.category.confidence) }]} />
+            <Text style={[styles.confidenceText, { color: confidenceColor(extraction.category.confidence) }]}>
+              {confidenceLabel(extraction.category.confidence)} ({(extraction.category.confidence * 100).toFixed(0)}%)
+            </Text>
+          </View>
         </View>
-        <TextInput
-          className="border border-gray-200 rounded px-3 py-2 text-base"
-          value={category}
-          onChangeText={(v) => setCategory(v as ExpenseCategory)}
-        />
-        {isLowConfidence(extraction.category.confidence) && (
-          <Text className="text-xs text-red-500 mt-1">
-            ⚠ Low confidence — please verify this value
-          </Text>
+        <View style={styles.categoryGrid}>
+          {CATEGORIES.map((c) => (
+            <TouchableOpacity
+              key={c.value}
+              onPress={() => setCategory(c.value)}
+              style={[
+                styles.categoryChip,
+                category === c.value && styles.categoryChipActive,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.categoryChipText,
+                  category === c.value && styles.categoryChipTextActive,
+                ]}
+              >
+                {c.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+        {extraction.category.confidence < LOW_CONFIDENCE_THRESHOLD && (
+          <Text style={styles.warningText}>⚠ ความเชื่อมั่นต่ำ — กรุณาเลือกหมวดหมู่ที่ถูกต้อง</Text>
         )}
       </View>
 
-      {/* Due Date */}
+      {/* Due Date field */}
       <View
-        className={`bg-white rounded-lg p-4 mb-3 border ${
-          isLowConfidence(extraction.dueDate.confidence)
-            ? "border-red-300"
-            : "border-gray-200"
-        }`}
+        style={[
+          styles.fieldCard,
+          extraction.dueDate.confidence < LOW_CONFIDENCE_THRESHOLD && styles.fieldCardWarning,
+        ]}
       >
-        <View className="flex-row justify-between mb-1">
-          <Text className="text-sm font-medium text-gray-700">Due Date</Text>
-          <Text className={`text-xs ${confidenceColor(extraction.dueDate.confidence)}`}>
-            {confidenceLabel(extraction.dueDate.confidence)} (
-            {(extraction.dueDate.confidence * 100).toFixed(0)}%)
-          </Text>
+        <View style={styles.fieldHeader}>
+          <Text style={styles.fieldLabel}>วันครบกำหนด</Text>
+          <View style={[styles.confidenceBadge, { backgroundColor: confidenceColor(extraction.dueDate.confidence) + "22" }]}>
+            <View style={[styles.confidenceDot, { backgroundColor: confidenceColor(extraction.dueDate.confidence) }]} />
+            <Text style={[styles.confidenceText, { color: confidenceColor(extraction.dueDate.confidence) }]}>
+              {confidenceLabel(extraction.dueDate.confidence)} ({(extraction.dueDate.confidence * 100).toFixed(0)}%)
+            </Text>
+          </View>
         </View>
         <TextInput
-          className="border border-gray-200 rounded px-3 py-2 text-base"
+          style={styles.textInput}
           value={dueDate}
           onChangeText={setDueDate}
+          placeholderTextColor={Theme.text.muted}
+          placeholder="YYYY-MM-DD"
         />
-        {isLowConfidence(extraction.dueDate.confidence) && (
-          <Text className="text-xs text-red-500 mt-1">
-            ⚠ Low confidence — please verify this value
-          </Text>
+        {extraction.dueDate.confidence < LOW_CONFIDENCE_THRESHOLD && (
+          <Text style={styles.warningText}>⚠ ความเชื่อมั่นต่ำ — กรุณาตรวจสอบวันที่</Text>
         )}
       </View>
 
-      <TouchableOpacity
-        onPress={handleConfirm}
-        disabled={loading}
-        className={`rounded-lg py-4 items-center mt-2 ${
-          loading ? "bg-blue-300" : "bg-blue-500"
-        }`}
-      >
-        <Text className="text-white font-semibold text-base">
-          {loading ? "Saving..." : "Confirm & Save"}
-        </Text>
-      </TouchableOpacity>
+      {/* Action buttons */}
+      <View style={styles.buttonRow}>
+        <TouchableOpacity
+          style={styles.cancelButton}
+          onPress={handleCancel}
+          disabled={loading}
+        >
+          <Text style={styles.cancelButtonText}>ยกเลิก</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.confirmButton, loading && styles.confirmButtonDisabled]}
+          onPress={handleConfirm}
+          disabled={loading}
+        >
+          <Text style={styles.confirmButtonText}>
+            {loading ? "กำลังบันทึก..." : "ยืนยัน"}
+          </Text>
+        </TouchableOpacity>
+      </View>
     </ScrollView>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: Theme.background.primary,
+  },
+  content: {
+    padding: 16,
+    paddingBottom: 40,
+  },
+  title: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: Theme.text.primary,
+    marginBottom: 4,
+  },
+  subtitle: {
+    fontSize: 14,
+    color: Theme.text.secondary,
+    marginBottom: 16,
+    lineHeight: 20,
+  },
+  // Retake tips banner
+  retakeBanner: {
+    backgroundColor: Theme.status.critical + "1A",
+    borderWidth: 1,
+    borderColor: Theme.status.critical + "44",
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+  },
+  retakeBannerTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: Theme.status.critical,
+    marginBottom: 4,
+  },
+  retakeBannerText: {
+    fontSize: 13,
+    color: Theme.text.secondary,
+    marginBottom: 8,
+  },
+  retakeTip: {
+    fontSize: 13,
+    color: Theme.text.secondary,
+    marginLeft: 4,
+    lineHeight: 20,
+  },
+  // Field card
+  fieldCard: {
+    backgroundColor: Theme.background.card,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: Theme.background.card,
+  },
+  fieldCardWarning: {
+    borderColor: Theme.status.critical + "66",
+  },
+  fieldHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  fieldLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: Theme.text.secondary,
+  },
+  // Confidence badge
+  confidenceBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  confidenceDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginRight: 6,
+  },
+  confidenceText: {
+    fontSize: 12,
+    fontWeight: "500",
+  },
+  // Text input
+  textInput: {
+    backgroundColor: Theme.background.primary,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 16,
+    color: Theme.text.primary,
+    borderWidth: 1,
+    borderColor: Theme.text.muted + "33",
+  },
+  warningText: {
+    fontSize: 12,
+    color: Theme.status.critical,
+    marginTop: 8,
+  },
+  // Category picker
+  categoryGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  categoryChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: Theme.background.primary,
+    borderWidth: 1,
+    borderColor: Theme.text.muted + "33",
+  },
+  categoryChipActive: {
+    backgroundColor: Theme.accent.green + "22",
+    borderColor: Theme.accent.green,
+  },
+  categoryChipText: {
+    fontSize: 14,
+    color: Theme.text.secondary,
+  },
+  categoryChipTextActive: {
+    color: Theme.accent.green,
+    fontWeight: "600",
+  },
+  // Buttons
+  buttonRow: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 8,
+  },
+  cancelButton: {
+    flex: 1,
+    backgroundColor: Theme.background.card,
+    borderRadius: 12,
+    paddingVertical: 16,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: Theme.text.muted + "33",
+  },
+  cancelButtonText: {
+    color: Theme.text.secondary,
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  confirmButton: {
+    flex: 1,
+    backgroundColor: Theme.accent.green,
+    borderRadius: 12,
+    paddingVertical: 16,
+    alignItems: "center",
+  },
+  confirmButtonDisabled: {
+    opacity: 0.5,
+  },
+  confirmButtonText: {
+    color: Theme.text.primary,
+    fontSize: 16,
+    fontWeight: "600",
+  },
+});

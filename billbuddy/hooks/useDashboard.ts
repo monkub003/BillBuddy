@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { Expense, ExpenseCategory } from "@/types";
+import { useExpenseStore } from "@/store/expenseStore";
 import { useIncomeStore } from "@/store/incomeStore";
 
 type AlertLevel = "none" | "warning" | "critical";
@@ -19,8 +20,16 @@ interface DashboardData {
   incomeRatio: number | null;
 }
 
-export function useDashboard(expenses: Expense[]): DashboardData {
+/**
+ * Aggregates dashboard data from the expense store and income store.
+ * Accepts an optional `expenses` parameter for backward compatibility;
+ * when omitted the hook reads directly from the Zustand expense store.
+ */
+export function useDashboard(expensesOverride?: Expense[]): DashboardData {
+  const storeExpenses = useExpenseStore((s) => s.expenses);
   const monthlyIncome = useIncomeStore((s) => s.monthlyIncome);
+
+  const expenses = expensesOverride ?? storeExpenses;
 
   return useMemo(() => {
     const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
@@ -43,9 +52,12 @@ export function useDashboard(expenses: Expense[]): DashboardData {
     // Upcoming unpaid bills sorted by due date ascending
     const upcomingBills = expenses
       .filter((e) => !e.isPaid)
-      .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+      .sort(
+        (a, b) =>
+          new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
+      );
 
-    // Alert level
+    // Alert level based on income ratio
     let alertLevel: AlertLevel = "none";
     let incomeRatio: number | null = null;
     if (monthlyIncome && monthlyIncome > 0) {
