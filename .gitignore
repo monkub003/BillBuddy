@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+
+# Environment files (keep .env.example files)
+.env
+functions/.env
+billbuddy/.env
+
+# Firebase service account keys
+*-firebase-adminsdk-*.json
+
+# Firebase
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+
+# Build output
+functions/lib/
+
+# OS files
+.DS_Store
+Thumbs.db

@@ -1,0 +1,16 @@
+services:
+  api:
+    image: node:18-slim
+    working_dir: /app/functions
+    volumes:
+      - .:/app
+    ports:
+      - "8080:8080"
+    env_file:
+      - functions/.env
+    command: >
+      bash -c "
+        npm install &&
+        npm run build &&
+        node dist/index.js
+      "

@@ -1,0 +1,1 @@
+{"version":3,"file":"insightRoutes.d.ts","sourceRoot":"","sources":["../../src/routes/insightRoutes.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,MAAM,EAAqB,MAAM,SAAS,CAAC;AAEpD,OAAO,EAAE,cAAc,EAAE,MAAM,uBAAuB,CAAC;AACvD,OAAO,EAAE,OAAO,EAAE,MAAM,kBAAkB,CAAC;AAG3C,UAAU,iBAAiB;IACzB,YAAY,EAAE,cAAc,CAAC,OAAO,CAAC,CAAC;CACvC;AAwGD,wBAAgB,mBAAmB,CAAC,IAAI,EAAE,iBAAiB,GAAG,MAAM,CA+EnE"}
