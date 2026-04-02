@@ -50,10 +50,10 @@ export default function DashboardScreen() {
   const insets = useSafeAreaInsets();
 
   const loadData = useCallback(() => {
-    fetchExpenses({ month: currentMonth, year: currentYear });
+    fetchExpenses({});
     fetchPredictions();
     fetchIncome();
-  }, [fetchExpenses, fetchPredictions, fetchIncome, currentMonth, currentYear]);
+  }, [fetchExpenses, fetchPredictions, fetchIncome]);
 
   useFocusEffect(
     useCallback(() => {

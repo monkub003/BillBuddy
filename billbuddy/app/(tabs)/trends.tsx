@@ -312,9 +312,9 @@ export default function TrendsScreen() {
   const currentYear = now.getFullYear();
 
   const loadData = useCallback(() => {
-    fetchExpenses({ month: currentMonth, year: currentYear });
+    fetchExpenses({});
     fetchTrends();
-  }, [fetchExpenses, fetchTrends, currentMonth, currentYear]);
+  }, [fetchExpenses, fetchTrends]);
 
   useFocusEffect(
     useCallback(() => {
