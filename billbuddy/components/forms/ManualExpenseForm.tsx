@@ -15,11 +15,17 @@ import { ExpenseCategory } from "@/types";
 import { Theme } from "@/constants/theme";
 
 const CATEGORIES: { value: ExpenseCategory; label: string }[] = [
-  { value: "electricity", label: "ค่าไฟ" },
+  { value: "electricity", label: "สาธารณูปโภค" },
   { value: "water", label: "ค่าน้ำ" },
   { value: "insurance", label: "ประกัน" },
   { value: "loan", label: "สินเชื่อ" },
   { value: "gas", label: "น้ำมัน" },
+  { value: "food", label: "อาหาร" },
+  { value: "transport", label: "การเดินทาง" },
+  { value: "household", label: "ของใช้ในบ้าน" },
+  { value: "entertainment", label: "บันเทิง" },
+  { value: "health", label: "สุขภาพ" },
+  { value: "education", label: "การศึกษา" },
   { value: "manual", label: "อื่นๆ" },
 ];
 

@@ -8,7 +8,8 @@ const firestore_1 = require("./firestore");
 const UTILITY_CATEGORIES = ["electricity", "water", "gas"];
 const FINANCIAL_CATEGORIES = ["insurance", "loan"];
 const ALL_CATEGORIES = [
-    "electricity", "water", "insurance", "loan", "gas", "manual",
+    "electricity", "water", "insurance", "loan", "gas",
+    "food", "transport", "household", "entertainment", "health", "education", "manual",
 ];
 const BASE_RANGE_FACTOR = 0.2; // ±20% base range
 // ---------------------------------------------------------------------------

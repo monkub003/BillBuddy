@@ -31,7 +31,12 @@ const correctionsStore = (0, firestore_1.createFirestoreStore)("corrections", db
 // UserRecord is a superset of User so this is structurally compatible at runtime.
 const userStoreAsUser = userStore;
 const app = (0, express_1.default)();
-app.use((0, cors_1.default)());
+app.use((0, cors_1.default)({
+    origin: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    credentials: true,
+}));
 app.use(express_1.default.json());
 // Health check endpoint
 app.get("/health", (_req, res) => {

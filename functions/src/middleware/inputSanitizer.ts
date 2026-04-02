@@ -52,6 +52,12 @@ const ALLOWED_CATEGORIES: readonly string[] = [
   "insurance",
   "loan",
   "gas",
+  "food",
+  "transport",
+  "household",
+  "entertainment",
+  "health",
+  "education",
   "manual",
 ] satisfies readonly ExpenseCategory[];
 

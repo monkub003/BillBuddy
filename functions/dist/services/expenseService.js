@@ -9,6 +9,12 @@ const ALLOWED_CATEGORIES = [
     "insurance",
     "loan",
     "gas",
+    "food",
+    "transport",
+    "household",
+    "entertainment",
+    "health",
+    "education",
     "manual",
 ];
 function createExpenseService(deps) {

@@ -44,6 +44,12 @@ const ALLOWED_CATEGORIES = [
     "insurance",
     "loan",
     "gas",
+    "food",
+    "transport",
+    "household",
+    "entertainment",
+    "health",
+    "education",
     "manual",
 ];
 const ALLOWED_SOURCES = [

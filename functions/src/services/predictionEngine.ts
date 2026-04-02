@@ -52,7 +52,8 @@ export interface PredictionEngineDeps {
 const UTILITY_CATEGORIES: ExpenseCategory[] = ["electricity", "water", "gas"];
 const FINANCIAL_CATEGORIES: ExpenseCategory[] = ["insurance", "loan"];
 const ALL_CATEGORIES: ExpenseCategory[] = [
-  "electricity", "water", "insurance", "loan", "gas", "manual",
+  "electricity", "water", "insurance", "loan", "gas",
+  "food", "transport", "household", "entertainment", "health", "education", "manual",
 ];
 
 const BASE_RANGE_FACTOR = 0.2; // ±20% base range

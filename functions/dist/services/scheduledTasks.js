@@ -109,7 +109,8 @@ function createScheduledTasks(deps) {
         };
         const allUsers = await userStore.getAll();
         const categories = [
-            "electricity", "water", "insurance", "loan", "gas", "manual",
+            "electricity", "water", "insurance", "loan", "gas",
+            "food", "transport", "household", "entertainment", "health", "education", "manual",
         ];
         for (const user of allUsers) {
             try {

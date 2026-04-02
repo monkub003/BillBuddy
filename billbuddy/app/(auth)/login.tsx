@@ -9,7 +9,7 @@ import {
   Platform,
   StyleSheet,
 } from "react-native";
-import { Link } from "expo-router";
+import { Link, router } from "expo-router";
 import { useAuth } from "@/hooks/useAuth";
 import { Theme } from "@/constants/theme";
 
@@ -19,8 +19,10 @@ export default function LoginScreen() {
   const { login, loading, error } = useAuth();
 
   const handleLogin = async () => {
-    console.log(error)
-    await login(email, password);
+    const success = await login(email, password);
+    if (success) {
+      router.replace("/(tabs)");
+    }
   };
 
   return (

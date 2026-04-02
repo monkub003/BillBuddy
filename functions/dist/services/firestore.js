@@ -67,7 +67,9 @@ function createFirestoreStore(collectionName, db) {
             return snap.docs.map((d) => d.data());
         },
         async set(id, data) {
-            await collection.doc(id).set(data);
+            // Strip undefined values — Firestore rejects them
+            const cleaned = JSON.parse(JSON.stringify(data));
+            await collection.doc(id).set(cleaned);
         },
         async delete(id) {
             const doc = await collection.doc(id).get();

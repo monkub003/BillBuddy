@@ -14,7 +14,7 @@ export function useAuth() {
   const [error, setError] = useState<string | null>(null);
 
   const login = useCallback(
-    async (email: string, password: string) => {
+    async (email: string, password: string): Promise<boolean> => {
       setLoading(true);
       setError(null);
       try {
@@ -23,8 +23,10 @@ export function useAuth() {
           body: JSON.stringify({ email, password }),
         });
         setAuth(data.token, data.user);
+        return true;
       } catch (err) {
         setError(err instanceof Error ? err.message : "Login failed");
+        return false;
       } finally {
         setLoading(false);
       }
@@ -33,7 +35,7 @@ export function useAuth() {
   );
 
   const signup = useCallback(
-    async (email: string, password: string) => {
+    async (email: string, password: string): Promise<boolean> => {
       setLoading(true);
       setError(null);
       try {
@@ -42,8 +44,10 @@ export function useAuth() {
           body: JSON.stringify({ email, password }),
         });
         setAuth(data.token, data.user);
+        return true;
       } catch (err) {
         setError(err instanceof Error ? err.message : "Signup failed");
+        return false;
       } finally {
         setLoading(false);
       }

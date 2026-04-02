@@ -43,7 +43,9 @@ export function createFirestoreStore<T>(
       return snap.docs.map((d) => d.data() as T);
     },
     async set(id: string, data: T) {
-      await collection.doc(id).set(data as admin.firestore.DocumentData);
+      // Strip undefined values — Firestore rejects them
+      const cleaned = JSON.parse(JSON.stringify(data));
+      await collection.doc(id).set(cleaned as admin.firestore.DocumentData);
     },
     async delete(id: string) {
       const doc = await collection.doc(id).get();

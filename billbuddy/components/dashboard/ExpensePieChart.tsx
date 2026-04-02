@@ -1,10 +1,6 @@
 import React from "react";
-import {
-  View,
-  Text,
-  TouchableOpacity,
-  StyleSheet,
-} from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import Svg, { Circle } from "react-native-svg";
 import { useRouter } from "expo-router";
 import { Expense, ExpenseCategory } from "@/types";
 import { Theme } from "@/constants/theme";
@@ -15,6 +11,12 @@ const CATEGORY_COLORS: Record<ExpenseCategory, string> = {
   insurance: Theme.chart.insurance,
   loan: Theme.chart.loan,
   gas: Theme.chart.gas,
+  food: Theme.chart.food,
+  transport: Theme.chart.transport,
+  household: Theme.chart.household,
+  entertainment: Theme.chart.entertainment,
+  health: Theme.chart.health,
+  education: Theme.chart.education,
   manual: Theme.chart.manual,
 };
 
@@ -24,6 +26,12 @@ const CATEGORY_LABELS: Record<ExpenseCategory, string> = {
   insurance: "ประกัน",
   loan: "สินเชื่อ",
   gas: "น้ำมัน",
+  food: "อาหาร",
+  transport: "การเดินทาง",
+  household: "ของใช้ในบ้าน",
+  entertainment: "บันเทิง",
+  health: "สุขภาพ",
+  education: "การศึกษา",
   manual: "อื่นๆ",
 };
 
@@ -53,23 +61,19 @@ function computeCategoryData(expenses: Expense[]): CategoryData[] {
       category,
       total,
       percentage: (total / grandTotal) * 100,
-      color: CATEGORY_COLORS[category],
-      label: CATEGORY_LABELS[category],
+      color: CATEGORY_COLORS[category] ?? Theme.text.muted,
+      label: CATEGORY_LABELS[category] ?? category,
     }))
     .sort((a, b) => b.total - a.total);
 }
 
 export function ExpensePieChart({ expenses }: Props) {
   const router = useRouter();
-
   const data = computeCategoryData(expenses);
 
-  if (data.length === 0) {
-    return null;
-  }
+  if (data.length === 0) return null;
 
   const handleCategoryPress = (category: ExpenseCategory) => {
-    // Navigate to category detail — uses query param for filtering
     router.push({ pathname: "/(tabs)", params: { category } });
   };
 
@@ -77,11 +81,9 @@ export function ExpensePieChart({ expenses }: Props) {
     <View style={styles.card}>
       <Text style={styles.title}>ค่าใช้จ่ายตามหมวดหมู่</Text>
       <View style={styles.chartRow}>
-        {/* Donut chart */}
-        <DonutChart data={data} size={120} strokeWidth={20} />
-        {/* Legend */}
+        <DonutChart data={data} size={140} strokeWidth={24} />
         <View style={styles.legend}>
-          {data.map((item) => (
+          {data.slice(0, 6).map((item) => (
             <TouchableOpacity
               key={item.category}
               style={styles.legendItem}
@@ -105,8 +107,7 @@ export function ExpensePieChart({ expenses }: Props) {
   );
 }
 
-
-/* ── Donut Chart (View-based, no SVG dependency) ── */
+/* ── SVG Donut Chart ── */
 
 interface DonutChartProps {
   data: CategoryData[];
@@ -115,163 +116,58 @@ interface DonutChartProps {
 }
 
 function DonutChart({ data, size, strokeWidth }: DonutChartProps) {
-  // Build conic-gradient-like segments using absolute-positioned half-circle Views.
-  // Each segment is a colored arc rendered via rotated half-circles clipped by overflow.
-  const segments = buildSegments(data);
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const center = size / 2;
+
+  // Build segments with cumulative offset
+  let cumulativePercent = 0;
+  const segments = data.map((item) => {
+    const segment = {
+      color: item.color,
+      percent: item.percentage,
+      offset: cumulativePercent,
+    };
+    cumulativePercent += item.percentage;
+    return segment;
+  });
 
   return (
-    <View
-      style={{
-        width: size,
-        height: size,
-        borderRadius: size / 2,
-        overflow: "hidden",
-        position: "relative",
-      }}
-    >
-      {segments.map((seg, i) => (
-        <HalfCircleSegment
-          key={i}
-          size={size}
-          startAngle={seg.startAngle}
-          sweepAngle={seg.sweepAngle}
-          color={seg.color}
-        />
-      ))}
-      {/* Inner circle to create donut hole */}
-      <View
-        style={{
-          position: "absolute",
-          top: strokeWidth,
-          left: strokeWidth,
-          width: size - strokeWidth * 2,
-          height: size - strokeWidth * 2,
-          borderRadius: (size - strokeWidth * 2) / 2,
-          backgroundColor: Theme.background.card,
-        }}
+    <Svg width={size} height={size}>
+      {/* Background ring */}
+      <Circle
+        cx={center}
+        cy={center}
+        r={radius}
+        fill="none"
+        stroke="rgba(255,255,255,0.05)"
+        strokeWidth={strokeWidth}
       />
-    </View>
-  );
-}
+      {/* Data segments */}
+      {segments.map((seg, i) => {
+        const dashLength = (seg.percent / 100) * circumference;
+        const dashGap = circumference - dashLength;
+        // Rotate so segment starts at correct position
+        // -90 to start from top, then add offset rotation
+        const rotation = -90 + (seg.offset / 100) * 360;
 
-interface Segment {
-  startAngle: number;
-  sweepAngle: number;
-  color: string;
-}
-
-function buildSegments(data: CategoryData[]): Segment[] {
-  const segments: Segment[] = [];
-  let currentAngle = -90; // start from top
-
-  for (const item of data) {
-    const sweep = (item.percentage / 100) * 360;
-    if (sweep > 0) {
-      segments.push({
-        startAngle: currentAngle,
-        sweepAngle: sweep,
-        color: item.color,
-      });
-      currentAngle += sweep;
-    }
-  }
-  return segments;
-}
-
-interface HalfCircleSegmentProps {
-  size: number;
-  startAngle: number;
-  sweepAngle: number;
-  color: string;
-}
-
-function HalfCircleSegment({
-  size,
-  startAngle,
-  sweepAngle,
-  color,
-}: HalfCircleSegmentProps) {
-  // For segments <= 180°, render one rotated half-circle.
-  // For segments > 180°, render two halves.
-  if (sweepAngle <= 0) return null;
-
-  if (sweepAngle <= 180) {
-    return (
-      <SingleArc
-        size={size}
-        startAngle={startAngle}
-        sweepAngle={sweepAngle}
-        color={color}
-      />
-    );
-  }
-
-  // Split into two arcs
-  return (
-    <>
-      <SingleArc
-        size={size}
-        startAngle={startAngle}
-        sweepAngle={180}
-        color={color}
-      />
-      <SingleArc
-        size={size}
-        startAngle={startAngle + 180}
-        sweepAngle={sweepAngle - 180}
-        color={color}
-      />
-    </>
-  );
-}
-
-interface SingleArcProps {
-  size: number;
-  startAngle: number;
-  sweepAngle: number;
-  color: string;
-}
-
-function SingleArc({ size, startAngle, sweepAngle, color }: SingleArcProps) {
-  // Renders a colored half-circle rotated to the correct position.
-  // The half-circle is clipped by a container that only shows the sweep portion.
-  const half = size / 2;
-
-  return (
-    <View
-      style={{
-        position: "absolute",
-        width: size,
-        height: size,
-        transform: [{ rotate: `${startAngle}deg` }],
-      }}
-    >
-      {/* Clip container: only shows the right half */}
-      <View
-        style={{
-          position: "absolute",
-          width: half,
-          height: size,
-          left: half,
-          overflow: "hidden",
-        }}
-      >
-        {/* The colored half-circle, rotated by sweepAngle */}
-        <View
-          style={{
-            width: size,
-            height: size,
-            borderRadius: half,
-            backgroundColor: color,
-            transform: [
-              { translateX: -half },
-              { rotate: `${sweepAngle}deg` },
-              { translateX: half },
-            ],
-          }}
-        />
-      </View>
-    </View>
+        return (
+          <Circle
+            key={i}
+            cx={center}
+            cy={center}
+            r={radius}
+            fill="none"
+            stroke={seg.color}
+            strokeWidth={strokeWidth}
+            strokeDasharray={`${dashLength} ${dashGap}`}
+            strokeLinecap="butt"
+            rotation={rotation}
+            origin={`${center}, ${center}`}
+          />
+        );
+      })}
+    </Svg>
   );
 }
 

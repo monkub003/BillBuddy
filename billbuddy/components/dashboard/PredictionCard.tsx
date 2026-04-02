@@ -10,6 +10,12 @@ const CATEGORY_LABELS: Record<ExpenseCategory, string> = {
   insurance: "ประกัน",
   loan: "สินเชื่อ",
   gas: "น้ำมัน",
+  food: "อาหาร",
+  transport: "การเดินทาง",
+  household: "ของใช้ในบ้าน",
+  entertainment: "บันเทิง",
+  health: "สุขภาพ",
+  education: "การศึกษา",
   manual: "อื่นๆ",
 };
 
@@ -19,6 +25,12 @@ const CATEGORY_COLORS: Record<ExpenseCategory, string> = {
   insurance: Theme.chart.insurance,
   loan: Theme.chart.loan,
   gas: Theme.chart.gas,
+  food: Theme.chart.food,
+  transport: Theme.chart.transport,
+  household: Theme.chart.household,
+  entertainment: Theme.chart.entertainment,
+  health: Theme.chart.health,
+  education: Theme.chart.education,
   manual: Theme.chart.manual,
 };
 

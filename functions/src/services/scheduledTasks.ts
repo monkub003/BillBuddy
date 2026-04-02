@@ -164,7 +164,8 @@ export function createScheduledTasks(deps: ScheduledTasksDeps) {
 
     const allUsers = await userStore.getAll();
     const categories: ExpenseCategory[] = [
-      "electricity", "water", "insurance", "loan", "gas", "manual",
+      "electricity", "water", "insurance", "loan", "gas",
+      "food", "transport", "household", "entertainment", "health", "education", "manual",
     ];
 
     for (const user of allUsers) {

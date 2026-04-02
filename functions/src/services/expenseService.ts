@@ -9,6 +9,12 @@ const ALLOWED_CATEGORIES: ExpenseCategory[] = [
   "insurance",
   "loan",
   "gas",
+  "food",
+  "transport",
+  "household",
+  "entertainment",
+  "health",
+  "education",
   "manual",
 ];
 

@@ -9,6 +9,12 @@ export type ExpenseCategory =
   | "insurance"
   | "loan"
   | "gas"
+  | "food"
+  | "transport"
+  | "household"
+  | "entertainment"
+  | "health"
+  | "education"
   | "manual";
 
 export type ExtractionSource = "email" | "image" | "manual";

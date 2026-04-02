@@ -10,7 +10,7 @@ import {
   ScrollView,
   StyleSheet,
 } from "react-native";
-import { Link } from "expo-router";
+import { Link, router } from "expo-router";
 import { useAuth } from "@/hooks/useAuth";
 import { Theme } from "@/constants/theme";
 
@@ -41,7 +41,10 @@ export default function SignupScreen() {
       return;
     }
 
-    await signup(email, password);
+    const success = await signup(email, password);
+    if (success) {
+      router.replace("/(tabs)");
+    }
   };
 
   const displayError = validationError ?? error;

@@ -54,6 +54,12 @@ export const Theme = {
     insurance: '#E91E8C',
     loan: '#E74C3C',
     gas: '#2ECC71',
+    food: '#E74C3C',
+    transport: '#3498DB',
+    household: '#0F9D58',
+    entertainment: '#9B59B6',
+    health: '#E91E8C',
+    education: '#3498DB',
     manual: '#9B59B6',
   },
 } as const;

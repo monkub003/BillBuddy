@@ -38,7 +38,12 @@ const userStoreAsUser = userStore as unknown as typeof userStore;
 
 const app = express();
 
-app.use(cors());
+app.use(cors({
+  origin: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: true,
+}));
 app.use(express.json());
 
 // Health check endpoint
